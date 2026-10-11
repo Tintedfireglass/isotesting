@@ -1,0 +1,158 @@
+name: Build Pramaan Live ISO
+
+# ── Trigger: manual only ──────────────────────────────────────────────────────
+on:
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Version label embedded in ISO filename (e.g. v1.2.0)'
+        required: false
+        default: 'dev'
+
+jobs:
+  build-iso:
+    name: Build Linux Live ISO
+    runs-on: ubuntu-latest
+
+    # Generous timeout — debootstrap + squashfs compression takes ~25 min
+    timeout-minutes: 60
+
+    permissions:
+      contents: write  # Required to upload release assets if needed
+
+    steps:
+    # ── 1. Checkout ──────────────────────────────────────────────────────────
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # ── 2. .NET 8 ────────────────────────────────────────────────────────────
+    - name: Setup .NET 8
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    # ── 3. Restore dependencies ───────────────────────────────────────────────
+    - name: Restore NuGet packages
+      run: dotnet restore cli/Pramaan.CLI.csproj
+
+    - name: Linux UI, report, and launcher regressions
+      run: |
+        dotnet run --project scripts/LinuxAppChecks/LinuxAppChecks.csproj -c Release
+        bash scripts/check-report-storage.sh
+        bash -n scripts/iso-assets/pramaan-startup.sh
+        bash -n scripts/iso-assets/pramaan-report-storage.sh
+
+    - name: Upload render snapshots
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: terminal-regression-snapshots
+        path: scripts/LinuxAppChecks/bin/Release/net8.0/snapshots/
+        if-no-files-found: ignore
+
+    # ── 4. Publish pramaan (linux-x64, self-contained, single-file) ───────────
+    - name: Publish pramaan CLI (linux-x64)
+      run: |
+        dotnet publish cli/Pramaan.CLI.csproj \
+          -c Release \
+          -r linux-x64 \
+          --self-contained true \
+          -p:PublishSingleFile=true \
+          -p:PublishReadyToRun=false \
+          -p:DebugType=none \
+          -p:DebugSymbols=false \
+          -o publish/pramaan
+
+    - name: Verify pramaan binary exists
+      run: |
+        ls -lh publish/pramaan/
+        file publish/pramaan/pramaan
+
+    # ── 5. Make build script executable ──────────────────────────────────────
+    - name: Make scripts executable
+      run: |
+        chmod +x scripts/build-iso.sh
+        chmod +x scripts/iso-assets/pramaan-startup.sh
+
+    # ── 6. Build ISO ──────────────────────────────────────────────────────────
+    # The build script requires root; GitHub Actions runners have passwordless sudo
+    - name: Build Live ISO
+      run: sudo ./scripts/build-iso.sh
+
+    # ── 7. Verify ISO integrity ───────────────────────────────────────────────
+    - name: Verify ISO
+      run: |
+        echo "── ISO details ──────────────────────────────────────────"
+        ls -lh pramaan-live.iso
+        file pramaan-live.iso
+
+        # Confirm bootable MBR record (fdisk is always available on Ubuntu runners)
+        echo ""
+        echo "── ISO partition info ───────────────────────────────────"
+        fdisk -l pramaan-live.iso || true
+
+        # Fail the job if the ISO is suspiciously small (< 200MB = something went wrong)
+        SIZE_BYTES=$(stat -c%s pramaan-live.iso)
+        MIN_BYTES=$((200 * 1024 * 1024))
+        if [ "$SIZE_BYTES" -lt "$MIN_BYTES" ]; then
+          echo "ERROR: ISO is too small (${SIZE_BYTES} bytes). Build likely failed."
+          exit 1
+        fi
+        echo ""
+        echo "✓ ISO size OK: $(numfmt --to=iec "$SIZE_BYTES")"
+
+    # ── 8. Rename with version tag ────────────────────────────────────────────
+    - name: Install VM smoke test tools
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf tesseract-ocr
+
+    - name: Boot ISO in BIOS and UEFI VMs
+      run: python3 scripts/iso-smoke.py pramaan-live.iso
+
+    - name: Upload VM smoke evidence
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: iso-boot-smoke-evidence
+        path: iso-smoke-output/
+        if-no-files-found: ignore
+
+    - name: Rename ISO with version tag
+      run: |
+        VERSION="${{ github.event.inputs.version_tag }}"
+        DATE=$(date +'%Y%m%d')
+        FILENAME="Pramaan_QC_Live_${VERSION}_${DATE}.iso"
+        mv pramaan-live.iso "$FILENAME"
+        echo "ISO_FILENAME=$FILENAME" >> "$GITHUB_ENV"
+        echo "Renamed to: $FILENAME"
+
+    # ── 9. Upload artifact ────────────────────────────────────────────────────
+    - name: Upload ISO artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.ISO_FILENAME }}
+        path: ${{ env.ISO_FILENAME }}
+        # Keep for 30 days — ISOs are large, don't hoard them
+        retention-days: 30
+        if-no-files-found: error
+        compression-level: 0  # ISO is already compressed internally
+
+    # ── 10. Summary ───────────────────────────────────────────────────────────
+    - name: Print build summary
+      run: |
+        echo "## ✅ Pramaan Live ISO Built" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Property | Value |" >> "$GITHUB_STEP_SUMMARY"
+        echo "|----------|-------|" >> "$GITHUB_STEP_SUMMARY"
+        echo "| File | \`${{ env.ISO_FILENAME }}\` |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Size | $(ls -lh "${{ env.ISO_FILENAME }}" | awk '{print $5}') |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Trigger | Manual (\`workflow_dispatch\`) |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Version | ${{ github.event.inputs.version_tag }} |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "### Flash Instructions" >> "$GITHUB_STEP_SUMMARY"
+        echo "1. Download the ISO from the **Artifacts** section above" >> "$GITHUB_STEP_SUMMARY"
+        echo "2. Flash to USB using **Balena Etcher** or **Rufus** (select DD mode)" >> "$GITHUB_STEP_SUMMARY"
+        echo "3. Disable **Secure Boot** in BIOS on the target laptop" >> "$GITHUB_STEP_SUMMARY"
+        echo "4. Boot from USB — Pramaan starts automatically after network setup" >> "$GITHUB_STEP_SUMMARY"
