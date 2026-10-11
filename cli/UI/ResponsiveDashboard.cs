@@ -15,20 +15,36 @@ public static class DashboardRenderer
         int height = Math.Max(1, rows ?? AnsiConsole.Profile.Height);
         if (width < 60 || height < 20)
             return new Layout("Resize").Update(new Text("Pramaan: resize to at least 60 columns x 20 rows. Q/Esc exits when idle."));
-        bool sideBySide = width >= 36 + 32;
-        int menuRows = Math.Min(DashboardState.MenuItems.Length, Math.Max(3, height - 25));
+        bool sideBySide = width >= 34 + 30 + 1;
+        int menuRows = Math.Min(DashboardState.MenuItems.Length, Math.Max(3, height - 26));
         int topHeight = sideBySide ? menuRows + 2 : 10;
-        int contentHeight = height - topHeight - 5;
-        var root = new Layout("Root").SplitRows(new Layout("Header").Size(2),
+        int contentHeight = height - topHeight - 6;
+        var root = new Layout("Root").SplitRows(new Layout("Header").Size(3),
             new Layout("Top").Size(topHeight), new Layout("Content"), new Layout("Footer").Size(3));
-        root["Header"].Update(new Text(Fit($"PRAMAAN | {s.OverallScore}/100 {s.GradeLabel} | Fails {s.FailCount} | {s.Elapsed}", width)
-            + "\n" + Fit(s.StatusMessage, width), new Style(Color.Purple)));
+        var tabs = string.Join("  ", Views.Select((name, i) => i == s.SelectedView
+            ? $"[bold black on fuchsia] {name} [/]" : $"[grey]{name}[/]"));
+        root["Header"].Update(new Rows(
+            new Markup("[bold white]PRAMAAN[/]  [bold fuchsia]Trust. Verify. Certify.[/]  [grey]|  LIVE QC[/]"),
+            new Text(Fit($"{s.SystemInfo?.Model ?? "Device overview"}  |  {s.StatusMessage}", width), new Style(Color.White)),
+            new Markup(tabs)));
         if (sideBySide)
         {
-            int menuWidth = Math.Max(36, width / 3);
-            root["Top"].SplitColumns(new Layout("Actions").Size(menuWidth), new Layout("Progress"));
+            int remaining = width - 65;
+            bool system = remaining >= 31;
+            if (system) remaining -= 31;
+            bool logo = remaining >= 39;
+            if (logo) remaining -= 39;
+            var panels = new List<Layout>();
+            if (logo) { panels.Add(new Layout("Brand").Size(38)); panels.Add(new Layout("BrandGap").Size(1).Update(new Text(""))); }
+            if (system) { panels.Add(new Layout("System").Size(30)); panels.Add(new Layout("SystemGap").Size(1).Update(new Text(""))); }
+            panels.Add(new Layout("Actions").Size(34));
+            panels.Add(new Layout("ActionGap").Size(1).Update(new Text("")));
+            panels.Add(new Layout("Progress"));
+            root["Top"].SplitColumns(panels.ToArray());
             root["Actions"].Update(Menu(s, menuRows));
-            root["Progress"].Update(Progress(s, width - menuWidth, topHeight - 2));
+            root["Progress"].Update(Progress(s, 30 + remaining, topHeight - 2));
+            if (system) root["System"].Update(SystemPanel(s, topHeight - 2));
+            if (logo) root["Brand"].Update(Brand());
         }
         else
         {
@@ -39,46 +55,80 @@ public static class DashboardRenderer
         var view = Views[s.SelectedView];
         root["Content"].Update(view == "Summary" ? Summary(s, width, contentHeight)
             : Paged(s, view, ContentLines(s, view), width, contentHeight));
-        root["Footer"].Update(new Text(Fit(string.IsNullOrEmpty(s.FooterMessage) ? "Ready. Full QC creates a saved report." : s.FooterMessage, width)
-            + "\n" + Fit(s.StorageMessage, width) + "\n"
-            + Fit($"Q/Esc: exit idle | Tab: {view} | PgUp/PgDn | Up/Down Enter", width), new Style(Color.Yellow)));
+        string status = string.IsNullOrEmpty(s.FooterMessage) ? "Ready. Full QC creates a saved report." : s.FooterMessage;
+        var statusColor = status.Contains("failed", StringComparison.OrdinalIgnoreCase) ? Color.Red
+            : status.Contains("Submitted", StringComparison.OrdinalIgnoreCase) ? Color.Green : Color.White;
+        root["Footer"].Update(new Rows(new Text(Fit(status, width), new Style(statusColor)),
+            new Text(Fit(s.StorageMessage, width), new Style(s.Store.IsPersistent ? Color.Green : Color.Yellow)),
+            new Markup("[bold white]Q/Esc[/][grey] exit | [/][bold white]Tab[/][grey] views | [/][bold white]PgUp/Dn[/][grey] pages | [/][bold white]Arrows/Enter[/][grey] actions[/]")));
         return root;
     }
 
-    static Panel Box(IRenderable content, string title) => new Panel(content).Header(title).Border(BoxBorder.Ascii).BorderColor(Color.Purple).Expand();
+    static Panel Box(IRenderable content, string title) => new Panel(content)
+        .Header($"[bold white]{title}[/]")
+        .Border(AnsiConsole.Profile.Capabilities.Unicode ? BoxBorder.Rounded : BoxBorder.Ascii)
+        .BorderColor(Color.Grey).Expand();
+
+    static IRenderable Brand() => new Rows(new Text(@" ___ ___  _   __  __  _   _   _  _
+| _ \ _ \/_\ |  \/  |/_\ /_\ | \| |
+|  _/   / _ \| |\/| / _ \ _ \| .` |
+|_| |_|_\/ \_\_|  |/_/ \_/ \_\_|\_|", new Style(Color.Fuchsia, decoration: Decoration.Bold)),
+        new Markup("[white] Trust. Verify.[/] [bold fuchsia]Certify.[/]"),
+        new Text(" Hardware quality certification", new Style(Color.Grey)));
+
+    static IRenderable SystemPanel(DashboardState s, int availableRows) => Box(new Text(string.Join("\n", new[]
+    {
+        $"Model  {s.SystemInfo?.Model ?? "-"}", $"Serial {s.SystemInfo?.SerialNumber ?? "-"}",
+        $"Device {s.DeviceId}", $"OS     {s.SystemInfo?.OsVersion ?? "-"}",
+        $"Score  {(s.Report == null ? "Not scanned" : s.OverallScore + "/100")}", $"Grade  {s.GradeLabel}", $"Time   {s.Elapsed}"
+    }.Take(availableRows).Select(line => Fit(line, 26)))), "SYSTEM INFORMATION");
     static IRenderable Menu(DashboardState s, int count)
     {
         int start = Math.Clamp(s.SelectedMenuIndex - count / 2, 0, Math.Max(0, DashboardState.MenuItems.Length - count));
         return Box(new Rows(Enumerable.Range(start, count).Select(i => new Text(
             (i == s.SelectedMenuIndex ? "> " : "  ") + DashboardState.MenuItems[i],
-            i == s.SelectedMenuIndex ? new Style(Color.Black, Color.Purple) : new Style(Color.White)))), "ACTIONS");
+            i == s.SelectedMenuIndex ? new Style(Color.Black, Color.Fuchsia, Decoration.Bold) : new Style(Color.White)))), "QUICK ACTIONS");
     }
     static IRenderable Progress(DashboardState s, int width, int availableRows)
     {
         var values = new[] { ("CPU", s.ProgressCpu), ("RAM", s.ProgressRam), ("Storage", s.ProgressStorage), ("GPU", s.ProgressGpu), ("Manual", s.ProgressComp) };
         if (availableRows < 5)
-            return Box(new Text($"CPU {s.ProgressCpu}%  RAM {s.ProgressRam}%\nStorage {s.ProgressStorage}%  GPU {s.ProgressGpu}%\nManual {s.ProgressComp}% | {s.Elapsed}"), "PROGRESS");
+            return Box(new Markup($"[white]CPU {s.ProgressCpu}%   RAM {s.ProgressRam}%[/]\n[white]Storage {s.ProgressStorage}%   GPU {s.ProgressGpu}%[/]\n[grey]Manual {s.ProgressComp}% | {s.Elapsed}[/]"), "TEST PROGRESS");
         int length = Math.Max(1, width - 21);
-        return Box(new Text(string.Join("\n", values.Select(v =>
+        return Box(new Markup(string.Join("\n", values.Select(v =>
         {
             int pct = Math.Clamp(v.Item2, 0, 100), fill = length * pct / 100;
-            return $"{v.Item1,-7} {new string('#', fill)}{new string('-', length - fill)} {pct,3}%";
-        }))), "PROGRESS");
+            return $"[white]{v.Item1,-7}[/] [fuchsia]{new string('=', fill)}[/][grey]{new string('-', length - fill)}[/] [white]{pct,3}%[/]";
+        }))), "TEST PROGRESS");
     }
     static IRenderable Summary(DashboardState s, int width, int height)
     {
-        var tests = Tests(s.Report);
-        var cards = new List<(string, string)> { ("OVERALL", $"{s.OverallScore}/100 {s.GradeLabel}\n{s.FailCount} failures") };
-        foreach (var (name, result) in tests.Take(5)) cards.Add((name, $"{Status(result)} | {result.Score}/100\n{result.Message}"));
-        cards.Add(("HARDWARE", $"{tests.Skip(5).Count(t => t.Result.Tested && t.Result.Passed)} passed\nSee Details for all tests"));
+        var report = s.Report ?? new QCReport();
+        var tests = Tests(report);
+        bool graded = s.GradeLabel != "N/A";
+        bool scanned = tests.Any(t => t.Result.Tested);
+        var cards = new List<(string Title, string Status, string Value, string Detail, Color Color)>
+        {
+            ("OVERALL", graded ? s.GradeLabel : s.IsTesting ? "TESTING" : scanned ? "DIAGNOSTICS" : "READY TO SCAN", graded ? $"{s.OverallScore} / 100" : s.IsTesting ? "Scanning..." : scanned ? "Not graded yet" : "No scan yet", $"{s.FailCount} fail | {s.WarningCount} warn", !scanned ? Color.Grey : s.FailCount > 0 ? Color.Red : Color.Green)
+        };
+        var primary = report.StorageDetails?.Devices.Where(d => d.SizeGB > 1).OrderByDescending(d => d.SizeGB).FirstOrDefault();
+        var module = report.RamDetails?.Modules.FirstOrDefault();
+        void Card(string title, TestResult result, string? value, string? detail) => cards.Add((title, Status(result), value ?? "Not scanned", detail ?? "Run Full QC", StatusColor(result)));
+        Card("CPU", report.CpuTest, report.CpuDetails?.Name, report.CpuDetails == null ? null : $"{report.CpuDetails.Cores} cores / {report.CpuDetails.Threads} threads");
+        Card("MEMORY", report.RamTest, report.RamDetails == null ? null : $"{report.RamDetails.TotalCapacityGB} GB {module?.MemoryType}", module == null ? null : $"{module.SpeedMHz} MHz | {report.RamDetails!.Modules.Count} slots");
+        Card("STORAGE", report.StorageTest, primary == null ? null : $"{primary.SizeGB:F0} GB {(primary.IsSsd ? "SSD" : "HDD")}", primary == null ? null : $"Health {primary.HealthPercent?.ToString() ?? "N/A"}%");
+        Card("BATTERY", report.BatteryTest, report.BatteryDetails == null ? null : report.BatteryDetails.IsPresent ? $"Health {report.BatteryDetails.HealthPercent?.ToString() ?? "N/A"}%" : "No battery", report.BatteryDetails == null ? null : $"Charge {report.BatteryDetails.EstimatedChargeRemaining}%");
+        Card("GPU", report.GpuTest, report.GpuTest.Tested ? report.GpuTest.Message : null, "See component details");
+        cards.Add(("HARDWARE", tests.Skip(5).Any(t => t.Result.Tested) ? "MANUAL TESTS" : "NOT TESTED", $"{tests.Skip(5).Count(t => t.Result.Tested && t.Result.Passed)} passed", "Keyboard / USB / AV", Color.Grey));
+        cards.Add(("ALERTS", !scanned ? "NOT SCANNED" : s.FailCount > 0 ? "ATTENTION" : "CLEAR", $"{s.FailCount} failures", $"{s.WarningCount} warnings", !scanned ? Color.Grey : s.FailCount > 0 ? Color.Red : Color.Green));
         if (height < 7)
-            return Paged(s, "Summary", cards.Select(c => $"{c.Item1}: {c.Item2.Replace('\n', ' ')}"), width, height);
-        int count = Math.Max(1, (width - 4) / 24), cardWidth = Math.Max(1, (width - 4) / count - 4);
-        int rowCount = Math.Max(1, (height - 3) / 5), perPage = count * rowCount;
+            return Paged(s, "Health summary", cards.Select(c => $"{c.Title}: {c.Status} | {c.Value} | {c.Detail}"), width, height);
+        int count = Math.Max(1, (width - 4) / 22), cardWidth = Math.Max(1, (width - 4) / count - 5);
+        int rowCount = Math.Max(1, (height - 2) / 5), perPage = count * rowCount;
         int pages = (cards.Count + perPage - 1) / perPage;
         s.Page = Math.Clamp(s.Page, 0, pages - 1);
         var grid = new Grid().Expand();
-        for (int i = 0; i < count; i++) grid.AddColumn(new GridColumn().PadRight(1));
+        for (int i = 0; i < count; i++) grid.AddColumn(new GridColumn().Width((width - 4) / count - 1).PadLeft(0).PadRight(1));
         var visible = cards.Skip(s.Page * perPage).Take(perPage).ToArray();
         for (int offset = 0; offset < visible.Length; offset += count)
         {
@@ -87,16 +137,64 @@ public static class DashboardRenderer
             {
                 if (offset + i >= visible.Length) { cells.Add(new Text("")); continue; }
                 var card = visible[offset + i];
-                var panel = Box(new Text(string.Join("\n", Wrap(card.Item2, cardWidth).Take(3))), card.Item1);
+                var panel = Box(new Rows(new Text(Fit(card.Status, cardWidth), new Style(card.Color, decoration: Decoration.Bold)),
+                    new Text(Fit(card.Value, cardWidth), new Style(Color.White, decoration: Decoration.Bold)),
+                    new Text(Fit(card.Detail, cardWidth), new Style(Color.Grey))), card.Title);
                 panel.Height = 5;
                 cells.Add(panel);
             }
             grid.AddRow(cells.ToArray());
         }
-        int spare = height - 3 - Math.Min(rowCount, (visible.Length + count - 1) / count) * 5;
-        IRenderable body = spare >= 4 ? new Rows(grid, new Text(string.Join("\n", Wrap(
-            $"Model: {s.SystemInfo?.Model}\nSerial: {s.SystemInfo?.SerialNumber}\nHealth ID: {s.HealthId}", width - 4).Take(spare)))) : grid;
-        return Box(body, $"SUMMARY {s.Page + 1}/{pages}");
+        int cardHeight = (visible.Length + count - 1) / count * 5 + 2;
+        int spare = height - cardHeight;
+        var health = Box(grid, $"HEALTH SUMMARY {s.Page + 1}/{pages}");
+        health.Height = cardHeight;
+        var sections = new List<IRenderable> { health };
+        if (spare >= 12)
+        {
+            var components = (Panel)ComponentTable(s, width); components.Height = 12;
+            sections.Add(components); spare -= 12;
+        }
+        if (spare >= 5)
+        {
+            var recent = (Panel)RecentReports(s); recent.Height = Math.Min(spare, 7);
+            sections.Add(recent);
+        }
+        return new Rows(sections);
+    }
+
+    static Color StatusColor(TestResult result) => !result.Tested ? Color.Grey : result.Passed ? Color.Green : Color.Red;
+    static IRenderable ComponentTable(DashboardState s, int width)
+    {
+        var table = new Table().Border(TableBorder.Simple).BorderColor(Color.Grey).Expand();
+        table.AddColumn(new TableColumn("[bold fuchsia]Component[/]").Width(11));
+        table.AddColumn(new TableColumn("[bold fuchsia]Status[/]").Width(10));
+        table.AddColumn("[bold fuchsia]Details[/]");
+        table.AddColumn(new TableColumn("[bold fuchsia]Score[/]").Width(7).RightAligned());
+        var report = s.Report ?? new QCReport();
+        foreach (var (name, result) in Tests(report).Take(7))
+            table.AddRow(new Text(name, new Style(Color.White)), new Text(Status(result), new Style(StatusColor(result))),
+                new Text(Fit(ComponentDetail(report, name, result), Math.Max(1, width - 48)), new Style(Color.White)),
+                new Text(result.Tested && s.GradeLabel != "N/A" ? $"{result.Score}/100" : "-", new Style(Color.White)));
+        return Box(table, "COMPONENT HEALTH");
+    }
+    static string ComponentDetail(QCReport report, string name, TestResult result) => name switch
+    {
+        "CPU" when report.CpuDetails != null => $"{report.CpuDetails.Name} | {report.CpuDetails.Cores}C / {report.CpuDetails.Threads}T",
+        "RAM" when report.RamDetails != null => $"{report.RamDetails.TotalCapacityGB} GB | {report.RamDetails.Modules.FirstOrDefault()?.MemoryType} | {report.RamDetails.Modules.Count} modules",
+        "Storage" when report.StorageDetails != null => string.Join(" | ", report.StorageDetails.Devices.Take(2).Select(d => $"{d.Model} {d.SizeGB:F0} GB {(d.IsSsd ? "SSD" : "HDD")}")),
+        "Battery" when report.BatteryDetails != null => $"Health {report.BatteryDetails.HealthPercent}% | Charge {report.BatteryDetails.EstimatedChargeRemaining}%",
+        _ => result.Message
+    };
+    static IRenderable RecentReports(DashboardState s)
+    {
+        var table = new Table().Border(TableBorder.None).Expand();
+        table.AddColumn("[grey]Report ID[/]"); table.AddColumn("[grey]Date & time[/]"); table.AddColumn("[grey]Status[/]");
+        foreach (var report in s.SavedReports.Take(3))
+            table.AddRow(new Text(report.HealthId.Truncate(12)), new Text(report.SavedAtUtc.ToLocalTime().ToString("MMM d HH:mm")),
+                new Text(report.Status, new Style(report.Status == "Submitted" ? Color.Green : Color.Yellow)));
+        if (s.SavedReports.Count == 0) table.AddRow("No reports yet", "Run Full QC", "Ready");
+        return Box(table, "RECENT REPORTS");
     }
     static IRenderable Paged(DashboardState s, string title, IEnumerable<string> source, int width, int height)
     {

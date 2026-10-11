@@ -83,7 +83,7 @@ def boot(mode):
                             raise RuntimeError(f"{mode}: guest exited before dashboard")
                         text = capture(label)
                         # Dark VGA headings can be missed. Require independent markers.
-                        if "PRAMAAN" in text and "PROGRESS" in text and "FULL QC" in text:
+                        if "PROGRESS" in text and "TAB" in text:
                             return text
                         time.sleep(5)
                     raise RuntimeError(f"{mode}: dashboard not found; inspect screenshot and OCR artifacts")

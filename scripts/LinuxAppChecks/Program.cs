@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using LaptopQC.Core.Models;
 using LaptopQC.Core.Services;
+using LaptopQC.Core.Diagnostics;
 using LaptopQC.Hardware.Models;
 using Pramaan.CLI.UI;
 using Spectre.Console;
@@ -106,12 +107,13 @@ foreach (var (width, height) in new[] { (80, 24), (100, 32), (140, 45), (160, 50
         using var writer = new StringWriter();
         var console = AnsiConsole.Create(new AnsiConsoleSettings { Ansi = AnsiSupport.No, ColorSystem = ColorSystemSupport.NoColors, Out = new AnsiConsoleOutput(writer) });
         console.Profile.Width = width; console.Profile.Height = height;
-        console.Write(DashboardRenderer.Build(state, width, height));
+        try { console.Write(DashboardRenderer.Build(state, width, height)); }
+        catch (Exception ex) { throw new Exception($"Render failed: {width}x{height} {DashboardRenderer.Views[view]}", ex); }
         var rendered = writer.ToString().Replace("\r", "");
         var lines = rendered.TrimEnd('\n').Split('\n');
         Check(lines.Length <= height && lines.All(l => l.Length <= width), $"Overflow at {width}x{height} {DashboardRenderer.Views[view]}: {lines.Length} rows");
         if (view == 0 && width >= 140 && height >= 45)
-            Check(rendered.Contains("HARDWARE") && rendered.Contains("GPU"), "Wrapped summary row was cropped");
+            Check(rendered.Contains("HARDWARE") && rendered.Contains("GPU") && rendered.Contains("Keyboard"), "Overview rows were cropped");
         if (width >= 60 && height >= 20)
         {
             Check(rendered.Contains("ACTIONS") && rendered.Contains("PROGRESS"), "Essential panels missing");
@@ -136,6 +138,34 @@ Check(state.SelectedMenuIndex == 7 && ReferenceEquals(state.Report, report), "Re
 DashboardDisplay.Navigate(ConsoleKey.Tab, state);
 Check(state.SelectedView == 2 && state.Page == 0, "Tab failed");
 File.WriteAllText(Path.Combine(outputRoot, "payload.json"), payload);
+// A styled preview from the production renderer, using clearly synthetic hardware.
+var previewReport = new QCReport
+{
+    SystemInfo = new SystemInfo { Manufacturer = "ASUS", Model = "TUF Dash F15", SerialNumber = "PREVIEW-001", OsVersion = "Pramaan Live Linux" },
+    CpuDetails = new CpuInfo { Name = "Intel Core i5-11300H", Cores = 4, Threads = 8, MaxClockSpeedMHz = 4400 },
+    RamDetails = new RamInfo { TotalCapacityGB = 24, Modules = new() { new RamModule { MemoryType = "DDR4", SpeedMHz = 3200 }, new RamModule { MemoryType = "DDR4", SpeedMHz = 3200 } } },
+    StorageDetails = new StorageInfo { Devices = new() { new StorageDevice { Model = "Samsung NVMe", SizeGB = 477, IsSsd = true, HealthPercent = 64 } } },
+    BatteryDetails = new BatteryInfo { IsPresent = true, HealthPercent = 70, EstimatedChargeRemaining = 81 },
+    OverallScore = 75, OverallGrade = "B"
+};
+foreach (var (_, result) in DashboardRenderer.Tests(previewReport))
+{
+    result.Tested = true; result.Passed = true; result.Score = 90; result.Grade = "A"; result.Message = "Verified";
+}
+previewReport.StorageTest.Passed = false; previewReport.StorageTest.Score = 35; previewReport.StorageTest.Grade = "F"; previewReport.StorageTest.Message = "SMART warning";
+var preview = new DashboardState { SystemInfo = previewReport.SystemInfo, DeviceId = 1042, Elapsed = "00:03:24",
+    ProgressCpu = 100, ProgressRam = 100, ProgressStorage = 100, ProgressGpu = 100, ProgressComp = 100,
+    StatusMessage = "QC complete | 1 component needs attention", StorageMessage = "USB report storage: persistent",
+    FooterMessage = "Report saved locally. Upload pending; open Saved reports / Retry." };
+preview.UpdateFromReport(previewReport); preview.SavedReports.Add(saved);
+foreach (var (width, height) in new[] { (80, 24), (140, 45), (160, 50) })
+{
+    using var recorder = AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(new StringWriter()) }).CreateRecorder();
+    recorder.Profile.Width = width; recorder.Profile.Height = height;
+    preview.Page = 0;
+    recorder.Write(DashboardRenderer.Build(preview, width, height));
+    File.WriteAllText(Path.Combine(outputRoot, $"preview-{width}.html"), "<!doctype html><html><head><meta charset=\"utf-8\"><title>Pramaan terminal preview</title><style>body{background:#000;margin:24px;color:#fff}pre{font:14px/1.3 Consolas,monospace;margin:0}</style></head><body>" + recorder.ExportHtml() + "</body></html>");
+}
 Console.WriteLine("PASS: responsive render bounds, full details, navigation, condition mapping, frozen retries, HTTP failures, atomic recovery, corrupt files, and storage failures.");
 Console.WriteLine($"Snapshots and contract fixture: {outputRoot}");
 

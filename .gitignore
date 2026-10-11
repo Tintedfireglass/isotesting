@@ -9,3 +9,4 @@ iso-smoke-output/
 *.tmp
 final-build-evidence/
 boot-evidence/
+boot-evidence-final/

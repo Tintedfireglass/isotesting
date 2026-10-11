@@ -128,6 +128,8 @@ public class DashboardState
         "B"  => "GOOD",
         "C"  => "FAIR",
         "D"  => "POOR",
+        "E"  => "VERY POOR",
+        "Reject" => "REJECTED",
         "F"  => "FAILED",
         _    => "N/A"
     };
