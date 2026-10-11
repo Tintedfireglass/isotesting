@@ -46,6 +46,8 @@ its storage checks succeed.
 Build `cli/Pramaan.CLI.csproj`; publish linux-x64 through the existing ISO workflow.
 Run `scripts/LinuxAppChecks/LinuxAppChecks.csproj` for rendering, upload, and storage
 regressions. Run `scripts/check-report-storage.sh` under Bash for launcher tests.
+The ISO workflow also checks real pseudo-terminal resizing and boots the built ISO
+in BIOS and UEFI QEMU guests, retaining screenshots and OCR output as artifacts.
 
 Before distributing an ISO, boot it in a Linux VM and then a physical laptop.
 Verify both UEFI and legacy boot, 80x24 and larger consoles, window/font resizing,

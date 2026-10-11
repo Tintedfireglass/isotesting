@@ -41,13 +41,16 @@ jobs:
         bash scripts/check-report-storage.sh
         bash -n scripts/iso-assets/pramaan-startup.sh
         bash -n scripts/iso-assets/pramaan-report-storage.sh
+        python3 scripts/terminal-smoke.py
 
     - name: Upload render snapshots
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: terminal-regression-snapshots
-        path: scripts/LinuxAppChecks/bin/Release/net8.0/snapshots/
+        path: |
+          scripts/LinuxAppChecks/bin/Release/net8.0/snapshots/
+          terminal-smoke-output/
         if-no-files-found: ignore
 
     # ── 4. Publish pramaan (linux-x64, self-contained, single-file) ───────────

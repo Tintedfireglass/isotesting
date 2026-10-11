@@ -26,6 +26,10 @@ public class QCWizard
     public async Task<QCReport?> RunAsync()
     {
         var report = new QCReport { Timestamp = DateTime.Now, AppVersion = "1.0.0L" };
+        _state.UpdateFromReport(report);
+        _state.FooterMessage = "";
+        _state.ProgressCpu = _state.ProgressRam = _state.ProgressStorage = _state.ProgressGpu = _state.ProgressComp = 0;
+        _state.Elapsed = "00:00:00";
 
         // ── Phase 1: Auth ─────────────────────────────────────────────────
         _state.StatusMessage = "Checking authentication...";
@@ -37,7 +41,7 @@ public class QCWizard
 
         if (authService.IsLoggedIn)
         {
-            _state.StatusMessage = $"✓ Activated: {authService.LicenseKey}";
+            _state.StatusMessage = "License session active.";
             activeToken = authService.Token;
             report.DeviceId = authService.MachineId ?? 0;
             _state.DeviceId = authService.MachineId ?? 0; // Show in dashboard
@@ -46,19 +50,21 @@ public class QCWizard
         {
             _state.StatusMessage = $"✓ Trial active: {trialService.CurrentTrial?.Email}";
             activeToken = trialService.CurrentTrial?.Token;
+            report.DeviceId = trialService.CurrentTrial?.MachineId ?? 0;
+            _state.DeviceId = report.DeviceId;
         }
         else
         {
             var choice = RunMenuPrompt("Activation Required", new[]
             {
-                "🔑 Activate License Key",
-                "⏳ Start 7-Day Free Trial",
-                "⚠  Continue Unactivated (Limited)"
+                "Activate License Key",
+                "Start 7-Day Free Trial",
+                "Continue Unactivated (Limited)"
             });
 
             if (choice == 0)
             {
-                var key = AnsiConsole.Prompt(new TextPrompt<string>("Enter [green]License Key[/]:"));
+                var key = AnsiConsole.Prompt(new TextPrompt<string>("Enter [green]License Key[/]:").Secret());
                 LoginResult? result = null;
                 await AnsiConsole.Status().StartAsync("Activating...", async ctx =>
                 {
@@ -76,7 +82,7 @@ public class QCWizard
                 }
                 else
                 {
-                    AnsiConsole.MarkupLine($"[red]Activation failed:[/] {result?.Message}");
+                    AnsiConsole.MarkupLine($"[red]Activation failed:[/] {(result?.Message ?? "Unknown error").EscapeMarkup()}");
                 }
             }
             else if (choice == 1)
@@ -95,11 +101,13 @@ public class QCWizard
                 if (result?.Success == true)
                 {
                     activeToken = result.Token;
+                    report.DeviceId = result.MachineId;
+                    _state.DeviceId = report.DeviceId;
                     _state.StatusMessage = $"✓ Trial started! {result.DaysRemaining} days remaining.";
                 }
                 else
                 {
-                    AnsiConsole.MarkupLine($"[red]Trial failed:[/] {result?.ErrorMessage}");
+                    AnsiConsole.MarkupLine($"[red]Trial failed:[/] {(result?.ErrorMessage ?? "Unknown error").EscapeMarkup()}");
                 }
             }
             else

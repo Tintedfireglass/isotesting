@@ -51,6 +51,11 @@ Directory.CreateDirectory(root);
 var store = new SavedReportStore(Path.Combine(root, "reports"));
 var saved = SavedReportStore.Create(payload);
 store.Save(saved);
+if (!OperatingSystem.IsWindows())
+{
+    var mode = File.GetUnixFileMode(Path.Combine(store.DirectoryPath, saved.ReportId + ".json"));
+    Check(mode == (UnixFileMode.UserRead | UnixFileMode.UserWrite), "Report file grants access beyond its owner");
+}
 Check(new SavedReportStore(store.DirectoryPath).Load().Single().Payload == payload, "Payload changed on restart");
 Check(!File.ReadAllText(Path.Combine(store.DirectoryPath, saved.ReportId + ".json")).Contains("test-token"), "Token stored");
 foreach (var (code, expected) in new[] { (HttpStatusCode.BadRequest, "Pending"), (HttpStatusCode.Unauthorized, "Pending"),
