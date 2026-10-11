@@ -21,8 +21,14 @@ def boot(mode):
     with tempfile.TemporaryDirectory(prefix="pramaan-vm-") as scratch:
         endpoint = str(Path(scratch) / "qmp.sock")
         args = ["qemu-system-x86_64", "-m", "2048", "-smp", "2", "-display", "none",
-                "-vga", "std", "-cdrom", str(iso), "-boot", "d", "-no-reboot",
+                "-vga", "std",
                 "-nic", "user,model=e1000", "-qmp", f"unix:{endpoint},server=on,wait=off"]
+        usb_image = os.environ.get("PRAMAAN_USB_IMAGE")
+        if usb_image:
+            args += ["-device", "usb-ehci,id=ehci", "-drive", f"if=none,id=stick,format=raw,file={usb_image}",
+                     "-device", "usb-storage,bus=ehci.0,drive=stick,bootindex=1"]
+        else:
+            args += ["-cdrom", str(iso), "-boot", "d", "-no-reboot"]
         if os.access("/dev/kvm", os.R_OK | os.W_OK):
             args += ["-accel", "kvm"]
         if mode == "uefi":
@@ -70,22 +76,56 @@ def boot(mode):
                     (output / f"{mode}-{label}.txt").write_text(text)
                     return text.upper()
 
-                while time.monotonic() < deadline:
-                    if process.poll() is not None:
-                        raise RuntimeError(f"{mode}: guest exited before dashboard")
-                    text = capture("dashboard")
-                    # VGA's dark magenta panel headings can be missed by OCR.
-                    # Require independent application and content markers instead.
-                    if "PRAMAAN" in text and "PROGRESS" in text and "FULL QC" in text:
-                        break
-                    time.sleep(5)
-                else:
+                def wait_dashboard(label):
+                    limit = time.monotonic() + 480
+                    while time.monotonic() < limit:
+                        if process.poll() is not None:
+                            raise RuntimeError(f"{mode}: guest exited before dashboard")
+                        text = capture(label)
+                        # Dark VGA headings can be missed. Require independent markers.
+                        if "PRAMAAN" in text and "PROGRESS" in text and "FULL QC" in text:
+                            return text
+                        time.sleep(5)
                     raise RuntimeError(f"{mode}: dashboard not found; inspect screenshot and OCR artifacts")
-                command("human-monitor-command", {"command-line": "sendkey tab"})
-                time.sleep(2)
-                details = capture("details")
-                if "DETAILS" not in details and "NO SCAN DATA" not in details:
-                    raise RuntimeError(f"{mode}: Tab did not switch to Details")
+
+                dashboard = wait_dashboard("dashboard")
+                if usb_image:
+                    if "PERSISTENT" not in dashboard:
+                        raise RuntimeError(f"{mode}: boot USB report partition not mounted")
+                    for _ in range(3):
+                        command("human-monitor-command", {"command-line": "sendkey tab"})
+                        time.sleep(0.3)
+                    if "PERSISTENCE CHECK" not in capture("reports-before-reboot"):
+                        raise RuntimeError(f"{mode}: saved report not loaded from USB")
+                    # A report from another laptop must be blocked before authentication.
+                    for _ in range(7):
+                        command("human-monitor-command", {"command-line": "sendkey down"})
+                        time.sleep(0.3)
+                    command("human-monitor-command", {"command-line": "sendkey ret"})
+                    time.sleep(2)
+                    command("human-monitor-command", {"command-line": "sendkey ret"})
+                    time.sleep(2)
+                    if "ORIGINAL MACHINE" not in capture("wrong-machine-retry"):
+                        raise RuntimeError(f"{mode}: retry did not require the original laptop")
+                    command("system_reset")
+                    time.sleep(10)
+                    if "PERSISTENT" not in wait_dashboard("dashboard-after-reboot"):
+                        raise RuntimeError(f"{mode}: persistent storage unavailable after reboot")
+                    for _ in range(3):
+                        command("human-monitor-command", {"command-line": "sendkey tab"})
+                        time.sleep(0.3)
+                    if "PERSISTENCE CHECK" not in capture("reports-after-reboot"):
+                        raise RuntimeError(f"{mode}: pending report lost across USB reboot")
+                    print(f"PASS: {mode} USB storage, saved report recovery after reboot, and original-machine retry guard", flush=True)
+                    continue_exit = True
+                else:
+                    continue_exit = False
+                if not continue_exit:
+                    command("human-monitor-command", {"command-line": "sendkey tab"})
+                    time.sleep(2)
+                    details = capture("details")
+                    if "DETAILS" not in details and "NO SCAN DATA" not in details:
+                        raise RuntimeError(f"{mode}: Tab did not switch to Details")
                 command("human-monitor-command", {"command-line": "sendkey q"})
                 time.sleep(3)
                 if "EXITED" not in capture("exit"):
