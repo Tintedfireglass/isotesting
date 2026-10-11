@@ -157,15 +157,20 @@ var preview = new DashboardState { SystemInfo = previewReport.SystemInfo, Device
     ProgressCpu = 100, ProgressRam = 100, ProgressStorage = 100, ProgressGpu = 100, ProgressComp = 100,
     StatusMessage = "QC complete | 1 component needs attention", StorageMessage = "USB report storage: persistent",
     FooterMessage = "Report saved locally. Upload pending; open Saved reports / Retry." };
-preview.UpdateFromReport(previewReport); preview.SavedReports.Add(saved);
+preview.UpdateFromReport(previewReport);
+preview.SavedReports.Add(SavedReportStore.Create(service.PrepareReport(previewReport)));
+preview.SavedReports.Add(saved);
+var previousPersistence = Environment.GetEnvironmentVariable("PRAMAAN_REPORTS_PERSISTENT");
+Environment.SetEnvironmentVariable("PRAMAAN_REPORTS_PERSISTENT", "1");
 foreach (var (width, height) in new[] { (80, 24), (140, 45), (160, 50) })
 {
     using var recorder = AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(new StringWriter()) }).CreateRecorder();
     recorder.Profile.Width = width; recorder.Profile.Height = height;
     preview.Page = 0;
     recorder.Write(DashboardRenderer.Build(preview, width, height));
-    File.WriteAllText(Path.Combine(outputRoot, $"preview-{width}.html"), "<!doctype html><html><head><meta charset=\"utf-8\"><title>Pramaan terminal preview</title><style>body{background:#000;margin:24px;color:#fff}pre{font:14px/1.3 Consolas,monospace;margin:0}</style></head><body>" + recorder.ExportHtml() + "</body></html>");
+    File.WriteAllText(Path.Combine(outputRoot, $"preview-{width}.html"), "<!doctype html><html><head><meta charset=\"utf-8\"><title>Pramaan terminal preview</title><style>body{background:#000;margin:24px;color:#fff}pre{font:14px/1.3 Consolas,monospace;margin:0}span{font-style:normal!important}</style></head><body>" + recorder.ExportHtml() + "</body></html>");
 }
+Environment.SetEnvironmentVariable("PRAMAAN_REPORTS_PERSISTENT", previousPersistence);
 Console.WriteLine("PASS: responsive render bounds, full details, navigation, condition mapping, frozen retries, HTTP failures, atomic recovery, corrupt files, and storage failures.");
 Console.WriteLine($"Snapshots and contract fixture: {outputRoot}");
 

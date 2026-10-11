@@ -109,7 +109,7 @@ public static class DashboardRenderer
         bool scanned = tests.Any(t => t.Result.Tested);
         var cards = new List<(string Title, string Status, string Value, string Detail, Color Color)>
         {
-            ("OVERALL", graded ? s.GradeLabel : s.IsTesting ? "TESTING" : scanned ? "DIAGNOSTICS" : "READY TO SCAN", graded ? $"{s.OverallScore} / 100" : s.IsTesting ? "Scanning..." : scanned ? "Not graded yet" : "No scan yet", $"{s.FailCount} fail | {s.WarningCount} warn", !scanned ? Color.Grey : s.FailCount > 0 ? Color.Red : Color.Green)
+            ("OVERALL", graded ? s.FailCount > 0 ? "NEEDS ATTENTION" : s.GradeLabel : s.IsTesting ? "TESTING" : scanned ? "DIAGNOSTICS" : "READY TO SCAN", graded ? $"{s.OverallScore} / 100" : s.IsTesting ? "Scanning..." : scanned ? "Not graded yet" : "No scan yet", graded ? $"{s.GradeLabel} | {s.FailCount} fail" : $"{s.FailCount} fail | {s.WarningCount} warn", !scanned ? Color.Grey : s.FailCount > 0 ? Color.Red : Color.Green)
         };
         var primary = report.StorageDetails?.Devices.Where(d => d.SizeGB > 1).OrderByDescending(d => d.SizeGB).FirstOrDefault();
         var module = report.RamDetails?.Modules.FirstOrDefault();
