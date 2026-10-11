@@ -7,3 +7,5 @@ iso-smoke-output/
 *.iso
 *.log
 *.tmp
+final-build-evidence/
+boot-evidence/

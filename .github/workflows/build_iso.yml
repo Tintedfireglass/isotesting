@@ -80,6 +80,7 @@ jobs:
     # ── 6. Build ISO ──────────────────────────────────────────────────────────
     # The build script requires root; GitHub Actions runners have passwordless sudo
     - name: Build Live ISO
+      id: iso
       run: sudo ./scripts/build-iso.sh
 
     # ── 7. Verify ISO integrity ───────────────────────────────────────────────
@@ -122,6 +123,7 @@ jobs:
         if-no-files-found: ignore
 
     - name: Rename ISO with version tag
+      if: ${{ always() && steps.iso.outcome == 'success' }}
       run: |
         VERSION="${{ github.event.inputs.version_tag }}"
         DATE=$(date +'%Y%m%d')
@@ -132,6 +134,7 @@ jobs:
 
     # ── 9. Upload artifact ────────────────────────────────────────────────────
     - name: Upload ISO artifact
+      if: ${{ always() && steps.iso.outcome == 'success' }}
       uses: actions/upload-artifact@v4
       with:
         name: ${{ env.ISO_FILENAME }}

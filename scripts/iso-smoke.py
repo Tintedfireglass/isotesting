@@ -66,7 +66,7 @@ def boot(mode):
                 def capture(label):
                     picture = output / f"{mode}-{label}.ppm"
                     command("screendump", {"filename": str(picture)})
-                    text = subprocess.check_output(["tesseract", str(picture), "stdout"], stderr=subprocess.DEVNULL, text=True)
+                    text = subprocess.check_output(["tesseract", str(picture), "stdout", "--psm", "6"], stderr=subprocess.DEVNULL, text=True)
                     (output / f"{mode}-{label}.txt").write_text(text)
                     return text.upper()
 
@@ -74,14 +74,17 @@ def boot(mode):
                     if process.poll() is not None:
                         raise RuntimeError(f"{mode}: guest exited before dashboard")
                     text = capture("dashboard")
-                    if "ACTIONS" in text and "PROGRESS" in text:
+                    # VGA's dark magenta panel headings can be missed by OCR.
+                    # Require independent application and content markers instead.
+                    if "PRAMAAN" in text and "PROGRESS" in text and "FULL QC" in text:
                         break
                     time.sleep(5)
                 else:
                     raise RuntimeError(f"{mode}: dashboard not found; inspect screenshot and OCR artifacts")
                 command("human-monitor-command", {"command-line": "sendkey tab"})
                 time.sleep(2)
-                if "DETAILS" not in capture("details"):
+                details = capture("details")
+                if "DETAILS" not in details and "NO SCAN DATA" not in details:
                     raise RuntimeError(f"{mode}: Tab did not switch to Details")
                 command("human-monitor-command", {"command-line": "sendkey q"})
                 time.sleep(3)

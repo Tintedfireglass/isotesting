@@ -177,7 +177,9 @@ class Program
                 Console.CursorVisible = true;
                 AnsiConsole.Clear();
                 await HandleMenuAction(actionToRun.Value);
-                if (actionToRun.Value != 0 && actionToRun.Value != 3 && actionToRun.Value != 4)
+                // Dashboard views already preserve the result. Only standalone
+                // USB/Ethernet screens need a pause before returning to it.
+                if (actionToRun.Value is 3 or 4)
                 {
                     AnsiConsole.MarkupLine("\n[grey]Press any key to return to dashboard...[/]");
                     Console.ReadKey(true);
