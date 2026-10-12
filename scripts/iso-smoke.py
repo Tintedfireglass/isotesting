@@ -101,6 +101,8 @@ def boot(mode):
                     raise RuntimeError(f"{mode}: dashboard not found; inspect screenshot and OCR artifacts")
 
                 dashboard = wait_dashboard("dashboard")
+                if not all(marker in dashboard for marker in ("DETAILS", "REPORTS", "MESSAGES")):
+                    raise RuntimeError(f"{mode}: secondary navigation is not readable on the boot console")
                 if usb_image:
                     if "PERSISTENT" not in dashboard:
                         raise RuntimeError(f"{mode}: boot USB report partition not mounted")
