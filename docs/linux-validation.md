@@ -25,3 +25,14 @@ a retry on another machine.
 Physical laptop boot, hardware diagnostics and a real authenticated submission
 remain manual acceptance checks. No real license, trial account or customer report
 is used by the automated tests. See `linux-live-usb.md` for preparation and controls.
+
+## Verified build
+
+- [ISO build and BIOS/UEFI boot checks](https://github.com/Tintedfireglass/isotesting/actions/runs/38192118906): passed.
+- [USB persistence, reboot recovery and original-machine retry guard](https://github.com/Tintedfireglass/isotesting/actions/runs/38192868249): passed in BIOS and UEFI.
+- [Download the ISO artifact](https://github.com/Tintedfireglass/isotesting/actions/runs/38192118906/artifacts/11722495516).
+
+The ISO filename is `Pramaan_QC_Live_pramaan-console_20261012.iso`; its date follows
+the build runner's UTC clock. The application source was built from snapshot
+`62ca4e1` in `Tintedfireglass/isotesting`. Later snapshot commits improve test OCR
+assertions and documentation without changing the application in this ISO.
