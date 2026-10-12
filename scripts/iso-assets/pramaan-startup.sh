@@ -9,7 +9,8 @@
 #    4. Launch pramaan in a loop (restart for next laptop without rebooting)
 # =============================================================================
 
-export TERM=xterm-256color
+# The boot virtual console supports the ANSI palette, not xterm's 256 colors.
+export TERM=linux
 export LANG=en_US.UTF-8
 
 # ── Colour helpers ────────────────────────────────────────────────────────────

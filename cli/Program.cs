@@ -27,6 +27,8 @@ class Program
 
     static async Task Main(string[] args)
     {
+        if (Environment.GetEnvironmentVariable("TERM") == "linux")
+            AnsiConsole.Profile.Capabilities.ColorSystem = ColorSystem.Standard;
         // ── CLI argument handling (non-interactive modes) ────────────────────
         if (args.Length > 0)
         {
