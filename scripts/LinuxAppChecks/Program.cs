@@ -99,6 +99,7 @@ handler.AfterSend = null;
 var state = new DashboardState { Report = report, SystemInfo = report.SystemInfo, FooterMessage = "Validation failed: " + new string('E', 350) + " ERROR-END" };
 state.SavedReports.Add(saved);
 string outputRoot = Path.Combine(AppContext.BaseDirectory, "snapshots"); Directory.CreateDirectory(outputRoot);
+foreach (bool unicode in new[] { false, true })
 foreach (var (width, height) in new[] { (80, 24), (100, 32), (140, 45), (160, 50), (60, 20), (60, 50), (160, 20), (40, 12) })
 {
     for (int view = 0; view < DashboardRenderer.Views.Length; view++)
@@ -107,11 +108,14 @@ foreach (var (width, height) in new[] { (80, 24), (100, 32), (140, 45), (160, 50
         using var writer = new StringWriter();
         var console = AnsiConsole.Create(new AnsiConsoleSettings { Ansi = AnsiSupport.No, ColorSystem = ColorSystemSupport.NoColors, Out = new AnsiConsoleOutput(writer) });
         console.Profile.Width = width; console.Profile.Height = height;
+        console.Profile.Capabilities.Unicode = unicode;
+        AnsiConsole.Profile.Capabilities.Unicode = unicode;
         try { console.Write(DashboardRenderer.Build(state, width, height)); }
         catch (Exception ex) { throw new Exception($"Render failed: {width}x{height} {DashboardRenderer.Views[view]}", ex); }
         var rendered = writer.ToString().Replace("\r", "");
         var lines = rendered.TrimEnd('\n').Split('\n');
-        Check(lines.Length <= height && lines.All(l => l.Length <= width), $"Overflow at {width}x{height} {DashboardRenderer.Views[view]}: {lines.Length} rows");
+        File.WriteAllText(Path.Combine(outputRoot, $"{width}x{height}-{view}-{(unicode ? "unicode" : "ascii")}.txt"), rendered);
+        Check(lines.Length <= height && lines.All(l => l.Length <= width), $"Overflow at {width}x{height} {DashboardRenderer.Views[view]}: {lines.Length} rows, max width {lines.Max(l => l.Length)}, line {JsonSerializer.Serialize(lines.FirstOrDefault(l => l.Length > width))}");
         if (view == 0 && width >= 140 && height >= 45)
             Check(rendered.Contains("HARDWARE") && rendered.Contains("GPU") && rendered.Contains("Keyboard"), "Overview rows were cropped");
         if (width >= 60 && height >= 20)
