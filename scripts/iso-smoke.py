@@ -76,14 +76,26 @@ def boot(mode):
                     (output / f"{mode}-{label}.txt").write_text(text)
                     return text.upper()
 
-                def wait_dashboard(label):
+                def wait_screen(label, predicate, timeout=30):
+                    limit = time.monotonic() + timeout
+                    while time.monotonic() < limit:
+                        text = capture(label)
+                        if predicate(text):
+                            return text
+                        time.sleep(1)
+                    raise RuntimeError(f"{mode}: expected screen {label} not found; inspect screenshot and OCR artifacts")
+
+                def wait_dashboard(label, fresh=False):
                     limit = time.monotonic() + 480
                     while time.monotonic() < limit:
                         if process.poll() is not None:
                             raise RuntimeError(f"{mode}: guest exited before dashboard")
                         text = capture(label)
                         # Dark VGA headings can be missed. Require independent markers.
-                        if "PROGRESS" in text and "TAB" in text:
+                        ready = "PROGRESS" in text and "TAB" in text
+                        # Firmware can retain the old framebuffer while rebooting.
+                        # The pre-reset Messages view is not a newly started app.
+                        if ready and (not fresh or ("SUMMARY" in text and "ORIGINAL MACHINE" not in text)):
                             return text
                         time.sleep(5)
                     raise RuntimeError(f"{mode}: dashboard not found; inspect screenshot and OCR artifacts")
@@ -95,8 +107,7 @@ def boot(mode):
                     for _ in range(3):
                         command("human-monitor-command", {"command-line": "sendkey tab"})
                         time.sleep(0.3)
-                    if "PERSISTENCE CHECK" not in capture("reports-before-reboot"):
-                        raise RuntimeError(f"{mode}: saved report not loaded from USB")
+                    wait_screen("reports-before-reboot", lambda text: "PERSISTENCE CHECK" in text)
                     # A report from another laptop must be blocked before authentication.
                     for _ in range(7):
                         command("human-monitor-command", {"command-line": "sendkey down"})
@@ -105,17 +116,15 @@ def boot(mode):
                     time.sleep(2)
                     command("human-monitor-command", {"command-line": "sendkey ret"})
                     time.sleep(2)
-                    if "ORIGINAL MACHINE" not in capture("wrong-machine-retry"):
-                        raise RuntimeError(f"{mode}: retry did not require the original laptop")
+                    wait_screen("wrong-machine-retry", lambda text: "ORIGINAL MACHINE" in text)
                     command("system_reset")
                     time.sleep(10)
-                    if "PERSISTENT" not in wait_dashboard("dashboard-after-reboot"):
+                    if "PERSISTENT" not in wait_dashboard("dashboard-after-reboot", fresh=True):
                         raise RuntimeError(f"{mode}: persistent storage unavailable after reboot")
                     for _ in range(3):
                         command("human-monitor-command", {"command-line": "sendkey tab"})
                         time.sleep(0.3)
-                    if "PERSISTENCE CHECK" not in capture("reports-after-reboot"):
-                        raise RuntimeError(f"{mode}: pending report lost across USB reboot")
+                    wait_screen("reports-after-reboot", lambda text: "PERSISTENCE CHECK" in text)
                     print(f"PASS: {mode} USB storage, saved report recovery after reboot, and original-machine retry guard", flush=True)
                     continue_exit = True
                 else:
@@ -123,13 +132,10 @@ def boot(mode):
                 if not continue_exit:
                     command("human-monitor-command", {"command-line": "sendkey tab"})
                     time.sleep(2)
-                    details = capture("details")
-                    if "DETAILS" not in details and "NO SCAN DATA" not in details:
-                        raise RuntimeError(f"{mode}: Tab did not switch to Details")
+                    wait_screen("details", lambda text: "DETAILS" in text or "NO SCAN DATA" in text)
                 command("human-monitor-command", {"command-line": "sendkey q"})
                 time.sleep(3)
-                if "EXITED" not in capture("exit"):
-                    raise RuntimeError(f"{mode}: Q did not return to the launcher")
+                wait_screen("exit", lambda text: "EXITED" in text)
                 print(f"PASS: {mode} boots the ISO, renders dashboard, switches views, and exits", flush=True)
             finally:
                 connection.close()

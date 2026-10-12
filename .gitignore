@@ -10,3 +10,5 @@ iso-smoke-output/
 final-build-evidence/
 boot-evidence/
 boot-evidence-final/
+linux-render-diagnostics/
+usb-evidence/
