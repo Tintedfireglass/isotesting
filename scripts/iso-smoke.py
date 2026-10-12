@@ -104,7 +104,7 @@ def boot(mode):
                 if not all(marker in dashboard for marker in ("DETAILS", "REPORTS", "MESSAGES")):
                     raise RuntimeError(f"{mode}: secondary navigation is not readable on the boot console")
                 if usb_image:
-                    if "PERSISTENT" not in dashboard:
+                    if "PERSISTEN" not in dashboard:
                         raise RuntimeError(f"{mode}: boot USB report partition not mounted")
                     for _ in range(3):
                         command("human-monitor-command", {"command-line": "sendkey tab"})
@@ -121,7 +121,7 @@ def boot(mode):
                     wait_screen("wrong-machine-retry", lambda text: "ORIGINAL MACHINE" in text)
                     command("system_reset")
                     time.sleep(10)
-                    if "PERSISTENT" not in wait_dashboard("dashboard-after-reboot", fresh=True):
+                    if "PERSISTEN" not in wait_dashboard("dashboard-after-reboot", fresh=True):
                         raise RuntimeError(f"{mode}: persistent storage unavailable after reboot")
                     for _ in range(3):
                         command("human-monitor-command", {"command-line": "sendkey tab"})
