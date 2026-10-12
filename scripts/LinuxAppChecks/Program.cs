@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using LaptopQC.Core.Models;
 using LaptopQC.Core.Services;
 using LaptopQC.Core.Diagnostics;
@@ -112,7 +113,11 @@ foreach (var (width, height) in new[] { (80, 24), (100, 32), (140, 45), (160, 50
         AnsiConsole.Profile.Capabilities.Unicode = unicode;
         try { console.Write(DashboardRenderer.Build(state, width, height)); }
         catch (Exception ex) { throw new Exception($"Render failed: {width}x{height} {DashboardRenderer.Views[view]}", ex); }
-        var rendered = writer.ToString().Replace("\r", "");
+        var rawRendered = writer.ToString();
+        // Some Linux terminals retain SGR decorations even with colours disabled.
+        // Escape sequences consume no character cells and must not count as width.
+        var rendered = Regex.Replace(rawRendered, @"\x1B\[[0-?]*[ -/]*[@-~]", "").Replace("\r", "");
+        File.WriteAllText(Path.Combine(outputRoot, $"{width}x{height}-{view}-{(unicode ? "unicode" : "ascii")}.ansi"), rawRendered);
         var lines = rendered.TrimEnd('\n').Split('\n');
         File.WriteAllText(Path.Combine(outputRoot, $"{width}x{height}-{view}-{(unicode ? "unicode" : "ascii")}.txt"), rendered);
         Check(lines.Length <= height && lines.All(l => l.Length <= width), $"Overflow at {width}x{height} {DashboardRenderer.Views[view]}: {lines.Length} rows, max width {lines.Max(l => l.Length)}, line {JsonSerializer.Serialize(lines.FirstOrDefault(l => l.Length > width))}");
