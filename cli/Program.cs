@@ -27,6 +27,8 @@ class Program
 
     static async Task Main(string[] args)
     {
+        // A real TTY remains interactive even when launched by a CI smoke test.
+        AnsiConsole.Profile.Capabilities.Interactive = !Console.IsInputRedirected && !Console.IsOutputRedirected;
         if (Environment.GetEnvironmentVariable("TERM") == "linux")
             AnsiConsole.Profile.Capabilities.ColorSystem = ColorSystem.Standard;
         // ── CLI argument handling (non-interactive modes) ────────────────────
