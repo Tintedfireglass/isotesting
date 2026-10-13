@@ -21,6 +21,8 @@ static class ActivationStorageChecks
             var verified = await gate.VerifyAsync(trial, trial ? "fixture@example.test" : "license-fixture", machine);
             Check(verified.MachineId == 123 && verified.Token == "verified", "Verified activation lost identity");
             Check(handler.Payload!.Contains("ORIGINAL-123"), "Activation used wrong hardware identity");
+            using (var request = JsonDocument.Parse(handler.Payload))
+                Check(trial || request.RootElement.GetProperty("platform").GetString() == "linux", "Linux activation was routed to Windows licensing");
             foreach (var code in new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden, HttpStatusCode.ServiceUnavailable })
             {
                 handler.Code = code;

@@ -17,3 +17,5 @@ usb-recheck-evidence/
 console-boot-evidence/
 final-usb-evidence/
 activation-regression-evidence/
+activation-boot-evidence/
+live-check-evidence/

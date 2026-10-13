@@ -475,7 +475,7 @@ class Program
 
             if (!string.IsNullOrWhiteSpace(authService.LicenseKey))
             {
-                await authService.LoginWithLicenseAsync(authService.LicenseKey, serial, si.MacAddress, si.ComputerName);
+                await authService.LoginWithLicenseAsync(authService.LicenseKey, serial, si.MacAddress, si.ComputerName, platform: "linux");
             }
             else if (authService.IsTrialSession)
             {

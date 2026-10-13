@@ -27,9 +27,10 @@ public sealed class OnlineActivation
         if (identity == "UNKNOWN-MACHINE" || string.IsNullOrWhiteSpace(credential))
             throw new InvalidOperationException("Activation requires credentials and an identifiable machine.");
         object body = trial
-            ? new { email = credential, machineSerial = identity, macAddress = machine.MacAddress, computerName = machine.ComputerName }
-            : new { licenseKey = credential, machineSerial = identity, macAddress = machine.MacAddress, computerName = machine.ComputerName };
-        using var response = await client.PostAsJsonAsync($"{api}/auth/{(trial ? "trial" : "license")}", body);
+            ? new { email = credential.Trim(), machineSerial = identity, macAddress = machine.MacAddress, computerName = machine.ComputerName }
+            : new { licenseKey = credential.Trim(), machineSerial = identity, macAddress = machine.MacAddress, computerName = machine.ComputerName, platform = "linux" };
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
+        using var response = await client.PostAsJsonAsync($"{api}/auth/{(trial ? "trial" : "license")}", body, options);
         if (!response.IsSuccessStatusCode)
             throw new InvalidOperationException($"Activation rejected (HTTP {(int)response.StatusCode}): {await response.Content.ReadAsStringAsync()}");
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());

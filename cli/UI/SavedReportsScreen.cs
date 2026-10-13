@@ -50,7 +50,7 @@ public static class SavedReportsScreen
         {
             var key = AnsiConsole.Prompt(new TextPrompt<string>("License key:").Secret());
             var auth = new AuthService();
-            var result = await auth.LoginWithLicenseAsync(key, saved.MachineId, info.MacAddress, info.ComputerName);
+            var result = await auth.LoginWithLicenseAsync(key, saved.MachineId, info.MacAddress, info.ComputerName, platform: "linux");
             if (result.Success) token = auth.Token;
             else state.FooterMessage = "Authentication failed: " + result.Message;
         }

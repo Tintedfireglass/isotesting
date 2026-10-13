@@ -92,7 +92,7 @@ public class AuthService
     /// Attempt to login with a 16-digit license key and lock it to this machine's hardware fingerprint.
     /// The server allocates a unique Machine ID and returns it.
     /// </summary>
-    public async Task<LoginResult> LoginWithLicenseAsync(string licenseKey, string machineSerial, string? macAddress = null, string? computerName = null)
+    public async Task<LoginResult> LoginWithLicenseAsync(string licenseKey, string machineSerial, string? macAddress = null, string? computerName = null, string platform = "windows")
     {
         try
         {
@@ -101,7 +101,8 @@ public class AuthService
                 licenseKey = licenseKey,
                 machineSerial = machineSerial,
                 macAddress = macAddress,
-                computerName = computerName
+                computerName = computerName,
+                platform = platform
             });
 
             if (response.IsSuccessStatusCode)

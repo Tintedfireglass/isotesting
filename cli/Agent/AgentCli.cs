@@ -44,7 +44,7 @@ public static class AgentCli
 
             // Verify auth now
             var auth = new AuthService(config.ApiUrl);
-            var login = await auth.LoginWithLicenseAsync(config.LicenseKey ?? "", config.MachineSerial ?? "", config.MacAddress, config.ComputerName);
+            var login = await auth.LoginWithLicenseAsync(config.LicenseKey ?? "", config.MachineSerial ?? "", config.MacAddress, config.ComputerName, platform: "linux");
             if (!login.Success)
             {
                 Console.Error.WriteLine(login.Message);
@@ -62,7 +62,7 @@ public static class AgentCli
                 return 3;
             }
             var auth = new AuthService(config.ApiUrl);
-            var login = await auth.LoginWithLicenseAsync(config.LicenseKey!, config.MachineSerial!, config.MacAddress, config.ComputerName);
+            var login = await auth.LoginWithLicenseAsync(config.LicenseKey!, config.MachineSerial!, config.MacAddress, config.ComputerName, platform: "linux");
             if (!login.Success)
             {
                 Console.Error.WriteLine(login.Message);
@@ -118,7 +118,7 @@ public static class AgentCli
                 }
 
                 var auth = new AuthService(config.ApiUrl);
-                var login = await auth.LoginWithLicenseAsync(config.LicenseKey!, config.MachineSerial!, config.MacAddress, config.ComputerName);
+                var login = await auth.LoginWithLicenseAsync(config.LicenseKey!, config.MachineSerial!, config.MacAddress, config.ComputerName, platform: "linux");
                 if (!login.Success)
                 {
                     Console.Error.WriteLine(login.Message);
