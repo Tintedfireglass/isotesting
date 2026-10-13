@@ -1,6 +1,6 @@
 """Boot the actual ISO under BIOS and UEFI; retain screenshots and OCR evidence.
 
-Uses only disposable VM firmware state. Does not attach host disks or submit QC.
+Uses disposable VM state. Optional live-license mode submits a clearly marked QA report.
 """
 import json
 import os
@@ -23,6 +23,15 @@ def boot(mode):
         args = ["qemu-system-x86_64", "-m", "2048", "-smp", "2", "-display", "none",
                 "-vga", "std",
                 "-nic", "user,model=e1000", "-qmp", f"unix:{endpoint},server=on,wait=off"]
+        live_license = os.environ.get("PRAMAAN_TEST_LICENSE_KEY") if mode == "bios" else None
+        if live_license:
+            # Stable, explicitly virtual identity consumes only one test activation.
+            args += ["-smbios", "type=1,serial=PRAMAAN-LINUX-QA-20261012"]
+            disk = Path(scratch) / "qa-nvme.raw"
+            with disk.open("wb") as stream:
+                stream.truncate(256 * 1024 * 1024 * 1024)  # Sparse disposable image.
+            args += ["-drive", f"if=none,id=qa-nvme,format=raw,file={disk}",
+                     "-device", "nvme,drive=qa-nvme,serial=PRAMAAN-QA-NVME"]
         usb_image = os.environ.get("PRAMAAN_USB_IMAGE")
         if usb_image:
             args += ["-device", "usb-ehci,id=ehci", "-drive", f"if=none,id=stick,format=raw,file={usb_image}",
@@ -100,6 +109,15 @@ def boot(mode):
                         time.sleep(5)
                     raise RuntimeError(f"{mode}: dashboard not found; inspect screenshot and OCR artifacts")
 
+                def key(value):
+                    command("human-monitor-command", {"command-line": "sendkey " + value})
+                    time.sleep(0.12)
+
+                def type_text(value):
+                    punctuation = {"-": "minus", " ": "spc", ".": "dot", ";": "semicolon"}
+                    for char in value:
+                        key("shift-" + char.lower() if char.isupper() else punctuation.get(char, char))
+
                 dashboard = wait_dashboard("dashboard")
                 if not all(marker in dashboard for marker in ("DETAILS", "REPORTS", "MESSAGES")):
                     raise RuntimeError(f"{mode}: secondary navigation is not readable on the boot console")
@@ -143,6 +161,33 @@ def boot(mode):
                     command("human-monitor-command", {"command-line": "sendkey ret"})
                     wait_screen("activation-cancelled", lambda text: "TESTS BLOCKED" in text)
                     print(f"PASS: {mode} requires activation before Full QC and cancellation blocks tests", flush=True)
+                    if live_license:
+                        key("ret")
+                        wait_screen("live-activation", lambda text: "ACTIVATION REQUIRED" in text)
+                        key("ret")
+                        wait_screen("live-license-prompt", lambda text: "LICENSE KEY" in text)
+                        # Never capture the prompt while the secret is being entered.
+                        type_text(live_license)
+                        key("ret")
+                        wait_screen("live-session", lambda text: "REFURBISH" in text, timeout=60)
+                        type_text("CODEX-VM-QA")
+                        key("ret")
+                        wait_screen("live-notes", lambda text: "TECHNICIAN NOTES" in text)
+                        type_text("Synthetic VM QA test only - not a customer laptop. Manual components not verified.")
+                        key("ret")
+                        wait_screen("live-condition", lambda text: "PHYSICAL CONDITION" in text)
+                        for _ in range(5): key("down")
+                        key("ret")
+                        wait_screen("live-scratches", lambda text: "SCRATCHES" in text)
+                        key("ret")
+                        for component in ("KEYBOARD", "TRACKPAD", "AUDIO/VIDEO", "AUDIO JACK"):
+                            wait_screen("live-manual", lambda text: "DID" in text and component in text, timeout=300)
+                            key("n")
+                            key("ret")
+                        final = wait_screen("live-submission", lambda text: "SUBMITTED" in text or "SUBMISSION FAILED" in text, timeout=120)
+                        if "SUBMITTED" not in final:
+                            raise RuntimeError("Live QA report upload failed; inspect screenshot")
+                        print("PASS: real online license activation and clearly marked VM QA report submission", flush=True)
                 command("human-monitor-command", {"command-line": "sendkey q"})
                 time.sleep(3)
                 wait_screen("exit", lambda text: "EXITED" in text)
@@ -157,5 +202,5 @@ def boot(mode):
                     process.wait()
 
 
-for boot_mode in ("bios", "uefi"):
+for boot_mode in os.environ.get("PRAMAAN_BOOT_MODES", "bios uefi").split():
     boot(boot_mode)

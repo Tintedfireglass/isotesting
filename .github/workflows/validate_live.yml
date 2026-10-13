@@ -1,0 +1,43 @@
+name: Validate online activation and QA upload
+on:
+  workflow_dispatch:
+    inputs:
+      build_run:
+        description: 'Completed ISO build run ID'
+        required: true
+      iso_artifact:
+        description: 'ISO artifact name'
+        required: true
+jobs:
+  live-license:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.iso_artifact }}
+          run-id: ${{ inputs.build_run }}
+          github-token: ${{ github.token }}
+          path: download
+      - name: Install isolated VM tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 tesseract-ocr
+      - name: Verify real activation and marked QA report upload
+        env:
+          PRAMAAN_TEST_LICENSE_KEY: ${{ secrets.PRAMAAN_TEST_LICENSE_KEY }}
+          PRAMAAN_BOOT_MODES: bios
+        run: |
+          test -n "$PRAMAAN_TEST_LICENSE_KEY"
+          python3 scripts/iso-smoke.py "$(find download -name '*.iso' -print -quit)"
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-activation-upload-evidence
+          path: iso-smoke-output/
+          if-no-files-found: ignore
