@@ -13,9 +13,19 @@ namespace Pramaan.CLI.Diagnostics;
 public class LinuxSmartTestService : ISmartTestService
 {
     private readonly string _smartctlPath;
+    private readonly Func<string, string, int, string> _run;
+    private readonly HashSet<string>? _targets;
+    public List<string> Errors { get; } = new();
 
-    public LinuxSmartTestService()
+    public LinuxSmartTestService(Func<string, string, int, string>? runner = null, IEnumerable<string>? targets = null)
     {
+        _run = runner ?? LinuxCommandRunner.TryRun;
+        _targets = targets == null ? null : new HashSet<string>(targets, StringComparer.Ordinal);
+        // The ISO installs a distro-compatible smartctl. Prefer it to a bundled
+        // executable whose dynamic dependencies may not match the live system.
+        if (runner != null) { _smartctlPath = "smartctl"; return; }
+        var system = new[] { "/usr/sbin/smartctl", "/usr/bin/smartctl", "/sbin/smartctl", "/usr/local/sbin/smartctl" }.FirstOrDefault(File.Exists);
+        if (system != null) { _smartctlPath = system; return; }
         // 1. Extract embedded smartctl if available
         string embeddedPath = Path.Combine(Path.GetTempPath(), "pramaan_smartctl");
         try
@@ -43,6 +53,8 @@ public class LinuxSmartTestService : ISmartTestService
                       : "smartctl";
     }
 
+    string RunSmart(string arguments, int timeoutMs = 15000) => _run(_smartctlPath, arguments, timeoutMs);
+
     // ── ISmartTestService ────────────────────────────────────────
 
     public bool IsAvailable
@@ -51,7 +63,7 @@ public class LinuxSmartTestService : ISmartTestService
         {
             try
             {
-                var out_ = LinuxCommandRunner.TryRun(_smartctlPath, "--version", 5000);
+                var out_ = RunSmart( "--version", 5000);
                 return out_.Contains("smartctl");
             }
             catch { return false; }
@@ -63,11 +75,13 @@ public class LinuxSmartTestService : ISmartTestService
     /// </summary>
     public List<SmartDriveInfo> GetTestableDevices()
     {
+        Errors.Clear();
         var devices = new List<SmartDriveInfo>();
+        var targets = _targets ?? new HashSet<string>(new LinuxStorageDiagnostic().GetInfo().Devices.Select(d => d.DeviceId));
 
         try
         {
-            var scanOut = LinuxCommandRunner.TryRun(_smartctlPath, "--scan");
+            var scanOut = RunSmart( "--scan");
             foreach (var line in scanOut.Split('\n', StringSplitOptions.RemoveEmptyEntries))
             {
                 // Format:  /dev/sda -d scsi # /dev/sda, SCSI device
@@ -78,6 +92,7 @@ public class LinuxSmartTestService : ISmartTestService
                 if (string.IsNullOrWhiteSpace(devPath)) continue;
                 // Skip loop and ram devices
                 if (devPath.Contains("/loop") || devPath.Contains("/ram")) continue;
+                if (!targets.Any(target => MatchesDevice(target, devPath))) continue;
 
                 // Check if smartctl provided a device type argument (e.g. -d megaraid,0)
                 string devArgs = "";
@@ -101,12 +116,19 @@ public class LinuxSmartTestService : ISmartTestService
             }
 
             // Fallback for Hardware RAID controllers that are missed by --scan
-            if (devices.Count == 0 || IsHardwareRaidPresent())
+            if (_targets == null && IsHardwareRaidPresent())
             {
                 devices.AddRange(ProbeHardwareRaidDevices());
             }
         }
         catch { /* Return whatever we got */ }
+
+        foreach (var target in targets)
+            if (!devices.Any(d => MatchesDevice(target, d.DevicePath)))
+            {
+                var drive = BuildDriveInfo(target);
+                if (drive != null) devices.Add(drive);
+            }
 
         return devices;
     }
@@ -137,7 +159,7 @@ public class LinuxSmartTestService : ISmartTestService
 
         if (devices.Count == 0)
         {
-            result.OverallHealthy = true;
+            result.OverallHealthy = false;
             result.Message = "No SMART-capable drives found";
             return result;
         }
@@ -173,9 +195,13 @@ public class LinuxSmartTestService : ISmartTestService
         };
 
         var args = string.IsNullOrWhiteSpace(deviceType) ? "" : $"-d {deviceType} ";
-        var startOut = LinuxCommandRunner.TryRun(_smartctlPath, $"-t short {args}{devicePath}");
+        var startOut = RunSmart( $"-t short {args}{devicePath}");
         if (startOut.Contains("error", StringComparison.OrdinalIgnoreCase) ||
             startOut.Contains("Unable to", StringComparison.OrdinalIgnoreCase) ||
+            startOut.Contains("not supported", StringComparison.OrdinalIgnoreCase) ||
+            startOut.Contains("Unsupported", StringComparison.OrdinalIgnoreCase) ||
+            startOut.Contains("Invalid Field", StringComparison.OrdinalIgnoreCase) ||
+            startOut.Contains("Permission denied", StringComparison.OrdinalIgnoreCase) ||
             startOut.Contains("failed to", StringComparison.OrdinalIgnoreCase))
         {
             // Distinguish inconclusive vs hard failure
@@ -207,7 +233,7 @@ public class LinuxSmartTestService : ISmartTestService
         {
             await Task.Delay(5000);
 
-            var logOut = LinuxCommandRunner.TryRun(_smartctlPath, $"-l selftest {args}{devicePath}");
+            var logOut = RunSmart( $"-l selftest {args}{devicePath}");
 
             int pct = 0;
             string status = "Testing...";
@@ -329,18 +355,22 @@ public class LinuxSmartTestService : ISmartTestService
 
     // ── Helpers ─────────────────────────────────────────────────
 
+    public static bool MatchesDevice(string target, string smartPath) => target == smartPath ||
+        (Regex.IsMatch(smartPath, @"^/dev/nvme\d+$") && Regex.IsMatch(target, "^" + Regex.Escape(smartPath) + @"n\d+$"));
+
     private SmartDriveInfo? BuildDriveInfo(string devicePath, string? deviceArgs = null)
     {
         try
         {
             var args = string.IsNullOrWhiteSpace(deviceArgs) ? "" : $" {deviceArgs}";
             // -a gives everything: identity + SMART attributes
-            var raw = LinuxCommandRunner.TryRun(_smartctlPath, $"-a {devicePath}{args}");
-            if (string.IsNullOrWhiteSpace(raw)) return null;
+            var raw = RunSmart( $"-a {devicePath}{args}");
+            if (string.IsNullOrWhiteSpace(raw)) { Errors.Add($"SMART {devicePath}: no output (command unavailable or timed out)."); return null; }
 
             if (raw.Contains("Permission denied", StringComparison.OrdinalIgnoreCase) ||
                 raw.Contains("requires root", StringComparison.OrdinalIgnoreCase))
             {
+                Errors.Add($"SMART {devicePath}: {raw.Trim()}");
                 return null;
             }
 
@@ -354,19 +384,23 @@ public class LinuxSmartTestService : ISmartTestService
             // Health: SMART overall-health self-assessment
             bool healthPassed = raw.Contains("SMART overall-health self-assessment test result: PASSED",
                                     StringComparison.OrdinalIgnoreCase)
-                             || raw.Contains(": PASSED", StringComparison.OrdinalIgnoreCase);
+                             || raw.Contains("SMART Health Status: OK", StringComparison.OrdinalIgnoreCase);
+            // No health verdict is unknown, rather than a fabricated failing score.
+            if (!Regex.IsMatch(raw, @"SMART (overall-health self-assessment test result|Health Status):", RegexOptions.IgnoreCase))
+            { Errors.Add($"SMART {devicePath}: {raw.Trim()}"); return null; }
 
             // Health score from Reallocated_Sector_Ct and other key attributes
             int healthScore = CalculateHealthScore(raw, healthPassed);
 
             // Temperature — attribute 190 or 194
-            int? temperature = ParseSmartAttribute(raw, "190")
-                            ?? ParseSmartAttribute(raw, "194")
+            int? temperature = ParseSmartAttributeFromOutput(raw, "190", "Airflow_Temperature_Cel")
+                            ?? ParseSmartAttributeFromOutput(raw, "194", "Temperature_Celsius")
                             ?? ParseSmartAttribute(raw, "Temperature_Celsius");
 
             // Power-on hours — attribute 9
-            int? powerOnHours = ParseSmartAttribute(raw, "9")
-                             ?? ParseSmartAttribute(raw, "Power_On_Hours");
+            int? powerOnHours = ParseSmartAttributeFromOutput(raw, "9", "Power_On_Hours");
+            var nvmeHours = Regex.Match(raw, @"Power On Hours:\s*([\d,]+)");
+            if (nvmeHours.Success && int.TryParse(nvmeHours.Groups[1].Value.Replace(",", ""), out int hours)) powerOnHours = hours;
 
             var warnings = new List<string>();
             if (!healthPassed) warnings.Add("SMART health check failed");
@@ -397,6 +431,8 @@ public class LinuxSmartTestService : ISmartTestService
         if (!healthPassed) return 15;
 
         int score = 100;
+        var used = Regex.Match(raw, @"Percentage Used:\s*(\d+)%", RegexOptions.IgnoreCase);
+        if (used.Success && int.TryParse(used.Groups[1].Value, out int percent)) score = Math.Clamp(100 - percent, 0, 100);
 
         // Reallocated Sector Count (attr 5)
         var reallocated = ParseSmartAttributeFromOutput(raw, "5", "Reallocated_Sector_Ct");

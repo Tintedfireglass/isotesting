@@ -13,107 +13,49 @@ public class LinuxStorageDiagnostic : IStorageDiagnostic
 
         try
         {
-            // Use lsblk -J to enumerate block devices (JSON output)
-            var lsblkJson = LinuxCommandRunner.TryRun("lsblk", "-J -b -o NAME,SIZE,TYPE,MODEL,ROTA,MOUNTPOINT,SERIAL");
-            if (!string.IsNullOrEmpty(lsblkJson))
-            {
-                using var doc = JsonDocument.Parse(lsblkJson);
-                if (doc.RootElement.TryGetProperty("blockdevices", out var devices))
-                {
-                    foreach (var dev in devices.EnumerateArray())
-                    {
-                        var type = dev.TryGetProperty("type", out var t) ? t.GetString() ?? "" : "";
-                        if (type != "disk") continue;
-
-                        var name = dev.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
-                        // Skip virtual/loop/ram devices
-                        if (name.StartsWith("loop") || name.StartsWith("ram") || name.StartsWith("zram")) continue;
-                        var model = dev.TryGetProperty("model", out var m) ? m.GetString()?.Trim() ?? "" : "";
-                        var sizeStr = dev.TryGetProperty("size", out var s) ? s.GetString() ?? "0" : "0";
-                        var rotaStr = dev.TryGetProperty("rota", out var r) ? r.GetString() ?? "1" : "1";
-                        var serial = dev.TryGetProperty("serial", out var ser) ? ser.GetString()?.Trim() ?? "" : "";
-
-                        long.TryParse(sizeStr, out long sizeBytes);
-                        bool.TryParse(rotaStr == "1" ? "true" : "false", out bool isHdd);
-
-                        var device = new StorageDevice
-                        {
-                            DeviceId = $"/dev/{name}",
-                            // Keep the raw device name only as a last resort — smartctl will overwrite
-                            // with the real vendor model string during SMART enrichment.
-                            Model = string.IsNullOrWhiteSpace(model) ? name.ToUpperInvariant() : model,
-                            SerialNumber = serial,
-                            SizeGB = sizeBytes / (1024.0 * 1024 * 1024),
-                            IsSsd = !isHdd
-                        };
-
-                        // Gather volume usage from mounted children
-                        if (dev.TryGetProperty("children", out var children))
-                        {
-                            foreach (var child in children.EnumerateArray())
-                            {
-                                var mount = child.TryGetProperty("mountpoint", out var mp) ? mp.GetString() : null;
-                                if (!string.IsNullOrEmpty(mount))
-                                {
-                                    var df = LinuxCommandRunner.TryRun("df", $"-B1 {mount}");
-                                    var dfMatch = Regex.Match(df, @"\S+\s+(\d+)\s+(\d+)\s+(\d+)");
-                                    if (dfMatch.Success)
-                                    {
-                                        long used = long.Parse(dfMatch.Groups[2].Value);
-                                        long free = long.Parse(dfMatch.Groups[3].Value);
-                                        info.Volumes.Add(new StorageVolume
-                                        {
-                                            Name = mount,
-                                            UsedBytes = used,
-                                            FreeBytes = free
-                                        });
-                                    }
-                                }
-                            }
-                        }
-
-                        info.Devices.Add(device);
-                    }
-                }
-            }
+            var json = LinuxCommandRunner.Run("lsblk", "-J -b -o NAME,SIZE,TYPE,MODEL,ROTA,MOUNTPOINT,SERIAL,TRAN,RM");
+            info = ParseDevices(json);
         }
-        catch { /* Try fallback */ }
-
-        // Fallback: parse /proc/partitions
-        if (info.Devices.Count == 0)
+        catch
         {
-            var partitions = LinuxCommandRunner.ReadFile("/proc/partitions");
-            foreach (var line in partitions.Split('\n').Skip(2))
-            {
-                var parts = line.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length < 4) continue;
-                var name = parts[3];
-                // Skip virtual devices
-                if (name.StartsWith("loop") || name.StartsWith("ram") || name.StartsWith("zram")) continue;
-                // Only root disks (sda, nvme0n1, vda, etc. — no partition numbers)
-                if (Regex.IsMatch(name, @"^\d") || 
-                    (name.StartsWith("sd") && Regex.IsMatch(name, @"sd[a-z]\d")) ||
-                    ((name.StartsWith("nvme") || name.StartsWith("mmcblk")) && Regex.IsMatch(name, @"p\d+$")))
-                    continue;
-                if (long.TryParse(parts[2], out long kb))
-                {
-                    info.Devices.Add(new StorageDevice
-                    {
-                        DeviceId = $"/dev/{name}",
-                        // Model will be enriched by smartctl — use device name as placeholder
-                        Model = name.ToUpperInvariant(),
-                        SizeGB = kb / (1024.0 * 1024),
-                        IsSsd = !name.StartsWith("hd")
-                    });
-                }
-            }
+            // Do not grade guessed devices from /proc/partitions as tested storage.
+            info.IsInconclusive = true;
+            info.InconclusiveReason = "Unable to enumerate internal storage with lsblk.";
         }
-
         CheckSoftwareRaid(info);
 
         return info;
     }
 
+    public static StorageInfo ParseDevices(string json)
+    {
+        var info = new StorageInfo();
+        using var doc = JsonDocument.Parse(json);
+        foreach (var dev in doc.RootElement.GetProperty("blockdevices").EnumerateArray())
+        {
+            string Read(string key) => dev.TryGetProperty(key, out var v) && v.ValueKind != JsonValueKind.Null ? v.ToString().Trim() : "";
+            var name = Read("name");
+            if (Read("type") != "disk" || name.StartsWith("loop") || name.StartsWith("ram") || name.StartsWith("zram")) continue;
+            if (Read("tran").Equals("usb", StringComparison.OrdinalIgnoreCase) || Read("rm") is "1" or "True" or "true" || IsBootMedium(dev)) continue;
+            long.TryParse(Read("size"), out long bytes);
+            var model = Read("model");
+            info.Devices.Add(new StorageDevice
+            {
+                DeviceId = name.StartsWith("/dev/") ? name : "/dev/" + name,
+                Model = string.IsNullOrWhiteSpace(model) ? name.ToUpperInvariant() : model,
+                SerialNumber = Read("serial"), SizeGB = bytes / (1024.0 * 1024 * 1024),
+                IsSsd = Read("rota") is "0" or "false" or "False"
+            });
+        }
+        return info;
+    }
+
+    static bool IsBootMedium(JsonElement dev)
+    {
+        if (dev.TryGetProperty("mountpoint", out var mp) && mp.ValueKind == JsonValueKind.String
+            && mp.GetString() is "/run/live/medium" or "/lib/live/mount/medium") return true;
+        return dev.TryGetProperty("children", out var children) && children.EnumerateArray().Any(IsBootMedium);
+    }
     public (bool IsHealthy, string Message) ValidateStorage(StorageInfo info)
     {
         EvaluateTamperState(info);

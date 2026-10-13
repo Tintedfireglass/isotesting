@@ -13,6 +13,16 @@ using its health ID; it does not generate another report. Messages shows full er
 
 ## Set up persistent report storage
 
+Every new QC, diagnostic, stress, USB or Ethernet test requires online license or
+trial verification for the current machine. Cancelled, failed, expired or offline
+activation blocks testing. Cached credentials never authorize an offline run.
+Report viewing remains available so an interrupted upload can be inspected.
+Command-line and automatic component checks enforce the same requirement.
+
+Storage checks target internal drives; the boot USB and removable drives are
+excluded. Details shows SMART errors and unsupported self-tests. Missing health
+data remains inconclusive rather than being reported as a measured drive failure.
+
 The live ISO itself is read-only. Its default writable overlay is temporary.
 Flashing the ISO alone does **not** provide persistent report storage.
 

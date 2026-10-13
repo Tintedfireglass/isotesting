@@ -32,6 +32,11 @@ class Program
         // ── CLI argument handling (non-interactive modes) ────────────────────
         if (args.Length > 0)
         {
+            if (args[0].ToLowerInvariant() is "--diagnose" or "-d" or "--stress" or "-s" or "--test-usb" or "--test-ethernet")
+            {
+                if (await OnlineActivation.RequireAsync(state, interactive: false) == null)
+                { Environment.ExitCode = 3; return; }
+            }
             if (args[0].Equals("agent", StringComparison.OrdinalIgnoreCase))
             {
                 var exitCode = await Pramaan.CLI.Agent.AgentCli.RunAsync(args);
@@ -196,6 +201,7 @@ class Program
 
     static async Task HandleMenuAction(int action)
     {
+        if (action is >= 1 and <= 4 && await OnlineActivation.RequireAsync(state) == null) return;
         switch (action)
         {
             case 0: // Run Full QC
@@ -303,69 +309,9 @@ class Program
 
             // SMART
             Refresh("Running SMART checks...");
-            var smartSvc = new LinuxSmartTestService();
-            if (smartSvc.IsAvailable)
-            {
-                var hc = smartSvc.QuickHealthCheck();
-                foreach (var dev in hc.Devices)
-                {
-                    report.StorageTest.Details.Add($"[SMART] {dev.Model}: {dev.HealthStatus} ({dev.HealthScore}%)");
-                    // Hardware RAID: if device has a DeviceType (e.g., megaraid,0), we add it as a separate device
-                    if (!string.IsNullOrEmpty(dev.DeviceType))
-                    {
-                        report.StorageDetails?.Devices.Add(new StorageDevice
-                        {
-                            DeviceId = $"{dev.DevicePath} [{dev.DeviceType}]",
-                            Model = string.IsNullOrWhiteSpace(dev.Model) ? "Unknown RAID Drive" : dev.Model,
-                            SerialNumber = dev.SerialNumber,
-                            HealthPercent = dev.HealthScore,
-                            Temperature = dev.Temperature,
-                            PowerOnHours = dev.PowerOnHours,
-                            SizeGB = 0 // Capacity is managed by the controller virtual disk
-                        });
-                        continue;
-                    }
-
-                    // Best-effort: sync health% into StorageDetails for display (standard drives)
-                    var sd = report.StorageDetails?.Devices.FirstOrDefault(d =>
-                        // Primary match: device path is always consistent on Linux
-                        d.DeviceId.Equals(dev.DevicePath, StringComparison.OrdinalIgnoreCase) ||
-                        // Fallback: model-name substring (for cases where DeviceId wasn't populated)
-                        d.Model.Contains(dev.Model, StringComparison.OrdinalIgnoreCase) ||
-                        dev.Model.Contains(d.Model, StringComparison.OrdinalIgnoreCase));
-                        
-                    if (sd != null)
-                    {
-                        sd.HealthPercent = dev.HealthScore;
-                        sd.Temperature = dev.Temperature;
-                        sd.PowerOnHours = dev.PowerOnHours;
-                        // Overwrite placeholder name (e.g. "NVME0N1") with the real vendor model
-                        if (!string.IsNullOrWhiteSpace(dev.Model) && !dev.Model.StartsWith("/dev/", StringComparison.OrdinalIgnoreCase))
-                            sd.Model = dev.Model;
-                        // Populate serial if lsblk didn't provide one
-                        if (string.IsNullOrWhiteSpace(sd.SerialNumber) && !string.IsNullOrWhiteSpace(dev.SerialNumber))
-                            sd.SerialNumber = dev.SerialNumber;
-                    }
-                }
-
-                // Authoritative pass/fail comes directly from SMART — bypasses any prior
-                // 'Inconclusive' result that fired before SMART data was available.
-                // Also clear IsInconclusive so the GradingService doesn't hard-cap to 35.
-                if (report.StorageDetails != null)
-                {
-                    foreach (var raid in report.StorageDetails.RaidArrays)
-                    {
-                        report.StorageTest.Details.Add($"[RAID] {raid.Name} ({raid.Level}): {raid.State} [{raid.ActiveDrives}/{raid.TotalDrives} drives]");
-                    }
-                    report.StorageDetails.IsInconclusive = false;
-                    report.StorageDetails.InconclusiveReason = null;
-                }
-                report.StorageTest.Passed = hc.OverallHealthy;
-                report.StorageTest.Message = hc.OverallHealthy
-                    ? $"{hc.Devices.Count} drive(s) healthy (SMART)"
-                    : $"SMART health warning on {hc.Devices.Count(d => !d.HealthPassed)} drive(s)";
-            }
-
+            var smartSvc = new LinuxSmartTestService(targets: report.StorageDetails!.Devices.Select(d => d.DeviceId));
+            var health = smartSvc.QuickHealthCheck();
+            report.StorageTest = LinuxStorageChecks.ApplyHealth(report.StorageDetails, health, smartSvc.Errors);
             state.ProgressStorage = 100;
             state.UpdateFromReport(report);
             state.StatusMessage = "Diagnostics complete!";
@@ -544,45 +490,16 @@ class Program
     {
         try
         {
-            var authService = new AuthService();
-            
-            if (!authService.IsLoggedIn)
-            {
-                var trialSvc = new TrialService();
-                if (trialSvc.IsTrialActive)
-                {
-                    var t = trialSvc.CurrentTrial!;
-                    authService.StartTrialSession(t.Email, t.Token, t.MachineId, t.TrialEndsAtUtc);
-                }
-            }
-
-            if (!authService.IsLoggedIn && !authService.IsTrialSession)
-            {
-                Console.WriteLine("No active license or trial session found.");
-                return;
-            }
-
-            var sysDiag = new LinuxSystemDiagnostic();
-            var si = sysDiag.GetInfo();
-            var serial = MachineIdentityService.GetBestIdentityKey(si.SerialNumber, si.MacAddress, si.ComputerName);
-
-            if (!string.IsNullOrWhiteSpace(authService.LicenseKey))
-            {
-                var loginResult = await authService.LoginWithLicenseAsync(authService.LicenseKey, serial, si.MacAddress, si.ComputerName);
-                if (!loginResult.Success)
-                {
-                    authService.Logout();
-                    return;
-                }
-            }
-
+            var activation = await OnlineActivation.RequireAsync(state, interactive: false);
+            if (activation == null) { Environment.ExitCode = 3; return; }
+            var si = state.SystemInfo!;
             // Create a fresh report
             var report = new QCReport 
             { 
                 ReportId = Guid.NewGuid().ToString(),
                 Timestamp = DateTime.UtcNow,
                 TechnicianNotes = "Automated weekly component check",
-                DeviceId = authService.MachineId ?? 0
+                DeviceId = activation.MachineId
             };
 
             // Gather Data
@@ -609,16 +526,8 @@ class Program
             var batVal = battDiag.ValidateBattery(report.BatteryDetails);
             report.BatteryTest = new TestResult { Tested = true, Passed = batVal.IsHealthy, Message = batVal.Message };
 
-            // Wait for SMART
-            var smartSvc = new LinuxSmartTestService();
-            if (smartSvc.IsAvailable && report.StorageDetails?.Devices.Count > 0)
-            {
-                // Just do quick health check for AutoQC to save time/resources, similar to skipping stress
-                var hc = smartSvc.QuickHealthCheck();
-                report.StorageTest.Passed = hc.OverallHealthy;
-                report.StorageTest.Message = hc.OverallHealthy ? "Healthy" : "Warning";
-            }
-
+            var smartSvc = new LinuxSmartTestService(targets: report.StorageDetails!.Devices.Select(d => d.DeviceId));
+            report.StorageTest = LinuxStorageChecks.ApplyHealth(report.StorageDetails, smartSvc.QuickHealthCheck(), smartSvc.Errors);
             var grading = new GradingService();
             var components = new[] { "CPU", "RAM", "Storage", "Battery", "SMART" };
             var componentGrades = grading.GradeComponentTestsOnly(report, components);
@@ -631,11 +540,11 @@ class Program
                 report,
                 componentGrades,
                 "auto_basic_qc",
-                authService.Token);
+                activation.Token);
 
             if (!submitResult.Success && submitResult.IsAuthError)
             {
-                authService.Logout();
+                Environment.ExitCode = 3;
             }
         }
         catch (Exception ex)

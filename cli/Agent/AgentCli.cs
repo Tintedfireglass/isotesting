@@ -74,6 +74,11 @@ public static class AgentCli
 
         if (sub == "check" || sub == "push")
         {
+            if (string.IsNullOrWhiteSpace(config.LicenseKey))
+            { Console.Error.WriteLine("Online license activation required before health checks."); return 3; }
+            var machine = new LinuxSystemDiagnostic().GetInfo();
+            try { await new Pramaan.CLI.UI.OnlineActivation(api: config.ApiUrl).VerifyAsync(false, config.LicenseKey, machine); }
+            catch (Exception ex) { Console.Error.WriteLine("Tests blocked: " + ex.Message); return 3; }
             var agentVersion = Assembly.GetEntryAssembly()?.GetName().Version?.ToString();
             var report = new LinuxServerHealthCollector(config).Collect(agentVersion);
 

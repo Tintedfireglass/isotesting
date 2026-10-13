@@ -25,9 +25,17 @@ internal static class LinuxCommandRunner
         };
 
         process.Start();
-        string output = process.StandardOutput.ReadToEnd();
-        process.WaitForExit(timeoutMs);
-        return output;
+        var output = process.StandardOutput.ReadToEndAsync();
+        var error = process.StandardError.ReadToEndAsync();
+        if (!process.WaitForExit(timeoutMs))
+        {
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit();
+            throw new TimeoutException($"{command} timed out after {timeoutMs} ms");
+        }
+        // smartctl uses non-zero exit codes to report real health warnings.
+        // Retain both streams instead of throwing away diagnostic evidence.
+        return output.GetAwaiter().GetResult() + "\n" + error.GetAwaiter().GetResult();
     }
 
     /// <summary>Runs a command and returns stdout, or empty string on any failure.</summary>

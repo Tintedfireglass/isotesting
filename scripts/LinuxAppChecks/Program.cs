@@ -8,6 +8,8 @@ using LaptopQC.Hardware.Models;
 using Pramaan.CLI.UI;
 using Spectre.Console;
 
+await ActivationStorageChecks.RunAsync();
+
 static void Check(bool condition, string message)
 {
     if (!condition) throw new Exception(message);
