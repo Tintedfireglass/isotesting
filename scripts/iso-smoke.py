@@ -24,7 +24,7 @@ def boot(mode):
         args = ["qemu-system-x86_64", "-m", "2048", "-smp", "2", "-display", "none",
                 "-vga", "std",
                 "-nic", "user,model=e1000", "-qmp", f"unix:{endpoint},server=on,wait=off"]
-        live_license = os.environ.get("PRAMAAN_TEST_LICENSE_KEY") if mode == "bios" else None
+        live_license = (os.environ.get("PRAMAAN_TEST_LICENSE_KEY") or "").strip() if mode == "bios" else None
         if live_license:
             # Stable, explicitly virtual identity consumes only one test activation.
             args += ["-smbios", "type=1,serial=PRAMAAN-LINUX-QA-20261012"]
