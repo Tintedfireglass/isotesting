@@ -4,6 +4,7 @@ Uses disposable VM state. Optional live-license mode submits a clearly marked QA
 """
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import socket
@@ -187,7 +188,17 @@ def boot(mode):
                         final = wait_screen("live-submission", lambda text: "SUBMITTED" in text or "SUBMISSION FAILED" in text, timeout=120)
                         if "SUBMITTED" not in final:
                             raise RuntimeError("Live QA report upload failed; inspect screenshot")
+                        storage_verified = False
+                        for _ in range(5):
+                            key("tab")
+                            details = capture("live-storage-details")
+                            if "DRIVE" in details and re.search(r"HEALTH\s*100", details):
+                                storage_verified = True
+                                break
+                        if not storage_verified:
+                            raise RuntimeError("Virtual NVMe SMART health was not available in report details")
                         print("PASS: real online license activation and clearly marked VM QA report submission", flush=True)
+                        print("PASS: virtual NVMe discovery and SMART health available in completed report", flush=True)
                 command("human-monitor-command", {"command-line": "sendkey q"})
                 time.sleep(3)
                 wait_screen("exit", lambda text: "EXITED" in text)
