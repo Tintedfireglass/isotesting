@@ -41,6 +41,16 @@ static class ActivationStorageChecks
         await MustReject(() => gate.VerifyAsync(true, "expired@example.test", machine));
         await MustReject(() => gate.VerifyAsync(false, "", machine));
 
+        var authDirectory = Path.Combine(AppContext.BaseDirectory, "scratch-auth-" + Guid.NewGuid().ToString("N"));
+        var authPath = Path.Combine(authDirectory, "linux_activation.json");
+        var credentials = new ActivationCredentials(authPath);
+        credentials.Save(false, "fake-fixture-key", "ORIGINAL-123");
+        Check(new ActivationCredentials(authPath).Read("ORIGINAL-123")?.Credential == "fake-fixture-key", "Machine-local credentials lost on restart");
+        Check(credentials.Read("OTHER-MACHINE") == null, "Credential hints transferred to another machine");
+        Check(!File.ReadAllText(authPath).Contains("verified"), "Bearer token persisted with credential hints");
+        if (!OperatingSystem.IsWindows())
+            Check(File.GetUnixFileMode(authPath) == (UnixFileMode.UserRead | UnixFileMode.UserWrite), "Credential file is not owner-only");
+
         var storage = LinuxStorageDiagnostic.ParseDevices("""
             {"blockdevices":[
               {"name":"nvme0n1","type":"disk","size":256060514304,"rota":false,"rm":false,"model":"Real NVMe","serial":"NVME-123","tran":"nvme"},

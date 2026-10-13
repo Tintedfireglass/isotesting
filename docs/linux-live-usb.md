@@ -18,6 +18,10 @@ trial verification for the current machine. Cancelled, failed, expired or offlin
 activation blocks testing. Cached credentials never authorize an offline run.
 Report viewing remains available so an interrupted upload can be inspected.
 Command-line and automatic component checks enforce the same requirement.
+Credential hints are stored in an owner-only machine-local file, bound to that
+machine's identity. They are separate from report storage and never grant offline
+access; each test revalidates them with the server. Live USB authentication remains
+in its temporary local session, while reports can persist on `PRAMAAN_DATA`.
 
 Storage checks target internal drives; the boot USB and removable drives are
 excluded. Details shows SMART errors and unsupported self-tests. Missing health

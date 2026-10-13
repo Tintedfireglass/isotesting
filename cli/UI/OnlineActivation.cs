@@ -50,10 +50,13 @@ public sealed class OnlineActivation
         try
         {
             var machine = new LinuxSystemDiagnostic().GetInfo();
+            var identity = MachineIdentityService.GetBestIdentityKey(machine.SerialNumber, machine.MacAddress, machine.ComputerName);
+            var credentials = new ActivationCredentials();
+            var hint = credentials.Read(identity);
             var auth = new AuthService();
             var trials = new TrialService();
-            string? credential = ForcePrompt ? null : SessionCredential ?? auth.LicenseKey;
-            bool trial = SessionCredential != null && SessionIsTrial;
+            string? credential = ForcePrompt ? null : SessionCredential ?? hint?.Credential ?? auth.LicenseKey;
+            bool trial = SessionCredential != null ? SessionIsTrial : hint?.Trial ?? false;
             if (!ForcePrompt && string.IsNullOrWhiteSpace(credential)) { credential = trials.CurrentTrial?.Email; trial = true; }
             if (string.IsNullOrWhiteSpace(credential))
             {
@@ -68,13 +71,16 @@ public sealed class OnlineActivation
             VerifiedActivation? verified = null;
             await AnsiConsole.Status().StartAsync("Verifying activation online...", async _ =>
                 verified = await new OnlineActivation().VerifyAsync(trial, credential!, machine));
-            // Keep credentials in memory only. Revalidate them before each run.
+            // Persist only a machine-bound hint outside report storage. Always
+            // revalidate online; a cached hint never grants permission to test.
             SessionCredential = credential;
             SessionIsTrial = trial;
             ForcePrompt = false;
             state.DeviceId = verified!.MachineId;
             state.SystemInfo = machine;
             state.FooterMessage = "Activation verified online.";
+            try { credentials.Save(trial, credential!, identity); }
+            catch (Exception ex) { state.FooterMessage += " Credentials could not be saved: " + ex.Message; }
             return verified;
         }
         catch (Exception ex)

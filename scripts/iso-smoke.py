@@ -199,6 +199,15 @@ def boot(mode):
                             raise RuntimeError("Virtual NVMe SMART health was not available in report details")
                         print("PASS: real online license activation and clearly marked VM QA report submission", flush=True)
                         print("PASS: virtual NVMe discovery and SMART health available in completed report", flush=True)
+                        network = command("human-monitor-command", {"command-line": "info network"})
+                        nic = re.search(r"(?m)^\s*(\S+):.*type=nic", network)
+                        if not nic:
+                            raise RuntimeError("Could not identify virtual NIC for offline enforcement check")
+                        command("set_link", {"name": nic.group(1), "up": False})
+                        key("down")  # Diagnostics; a cached license must not authorize it offline.
+                        key("ret")
+                        wait_screen("live-offline-blocked", lambda text: "TESTS BLOCKED" in text, timeout=45)
+                        print("PASS: previously activated session cannot start diagnostics after network disconnect", flush=True)
                 command("human-monitor-command", {"command-line": "sendkey q"})
                 time.sleep(3)
                 wait_screen("exit", lambda text: "EXITED" in text)
