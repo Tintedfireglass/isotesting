@@ -27,8 +27,24 @@ nmcli con add type wifi ifname "$ap" con-name Pramaan-QA-ap ssid Pramaan-QA \
     wifi-sec.psk qa-password-only wifi-sec.proto rsn ipv4.method manual ipv4.addresses 192.168.77.1/24 \
     ipv4.never-default yes ipv6.method disabled
 nmcli --wait 30 con up Pramaan-QA-ap
-nmcli device wifi list ifname "$client" --rescan yes
-nmcli -g SSID device wifi list ifname "$client" | grep -Fx Pramaan-QA
+# NetworkManager's scan request is asynchronous. Wait for the new AP instead
+# of treating the initial empty scan cache as a connection failure.
+found=0
+for attempt in $(seq 1 15); do
+    nmcli device wifi rescan ifname "$client" || true
+    sleep 2
+    if nmcli -g SSID device wifi list ifname "$client" --rescan no | grep -Fx Pramaan-QA; then
+        found=1
+        break
+    fi
+done
+nmcli device wifi list ifname "$client" --rescan no
+if [[ "$found" != 1 ]]; then
+    iw reg get
+    nmcli device status
+    journalctl -u NetworkManager --no-pager -n 50
+    exit 1
+fi
 nmcli con add type wifi ifname "$client" con-name Pramaan-QA-client ssid Pramaan-QA \
     wifi-sec.key-mgmt wpa-psk wifi-sec.psk qa-password-only wifi-sec.proto rsn \
     ipv4.method manual ipv4.addresses 192.168.77.2/24 ipv4.never-default yes ipv6.method disabled
