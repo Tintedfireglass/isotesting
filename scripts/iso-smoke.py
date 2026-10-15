@@ -23,7 +23,7 @@ def boot(mode):
         endpoint = str(Path(scratch) / "qmp.sock")
         args = ["qemu-system-x86_64", "-m", "2048", "-smp", "2", "-display", "none",
                 "-vga", "std",
-                "-nic", "user,model=e1000", "-qmp", f"unix:{endpoint},server=on,wait=off"]
+                "-nic", "user,model=" + os.environ.get("PRAMAAN_NIC_MODEL", "e1000"), "-qmp", f"unix:{endpoint},server=on,wait=off"]
         network_qa = bool(os.environ.get("PRAMAAN_NETWORK_QA"))
         if network_qa:
             scripts = Path(__file__).resolve().parent
@@ -245,9 +245,10 @@ def boot(mode):
                         type_text("mount -t 9p -o trans=virtio qa-scripts /mnt")
                         key("ret")
                         time.sleep(2)
-                        type_text("bash /mnt/network-wifi-smoke.sh")
+                        extended = bool(os.environ.get("PRAMAAN_NETWORK_EXTENDED"))
+                        type_text("bash /mnt/network-wifi-smoke.sh" + (" extended" if extended else ""))
                         key("ret")
-                        deadline = time.monotonic() + 150
+                        deadline = time.monotonic() + (420 if extended else 150)
                         while time.monotonic() < deadline:
                             serial = (output / (mode + "-wifi-serial.log")).read_text(errors="replace")
                             if "WIFI_QA_PASS" in serial:
@@ -259,6 +260,22 @@ def boot(mode):
                         else:
                             capture("wifi-test-timeout")
                             raise RuntimeError("Simulated Wi-Fi check timed out; inspect serial log and screenshot")
+                        if extended:
+                            time.sleep(2)
+                            type_text("bash /mnt/network-soak-smoke.sh")
+                            key("ret")
+                            deadline = time.monotonic() + 300
+                            while time.monotonic() < deadline:
+                                serial = (output / (mode + "-wifi-serial.log")).read_text(errors="replace")
+                                if "NETWORK_SOAK_PASS" in serial:
+                                    print("PASS: repeated network recovery, broken DNS and invalid-clock TLS rejection/recovery", flush=True)
+                                    break
+                                if "NETWORK_SOAK_FAIL" in serial:
+                                    raise RuntimeError("Network fault injection failed; inspect serial log")
+                                time.sleep(2)
+                            else:
+                                capture("network-soak-timeout")
+                                raise RuntimeError("Network fault injection timed out")
             finally:
                 connection.close()
                 process.terminate()

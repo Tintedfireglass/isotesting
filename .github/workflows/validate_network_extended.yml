@@ -1,0 +1,58 @@
+name: Extended final ISO network testing
+on:
+  workflow_dispatch:
+    inputs:
+      build_run:
+        required: true
+        description: Completed ISO build run
+      iso_artifact:
+        required: true
+        description: Exact ISO artifact name
+jobs:
+  network:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - nic: e1000
+            mode: bios
+            extended: '1'
+          - nic: virtio-net-pci
+            mode: uefi
+            extended: ''
+          - nic: rtl8139
+            mode: bios
+            extended: ''
+    name: ${{ matrix.nic }} / ${{ matrix.mode }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.iso_artifact }}
+          run-id: ${{ inputs.build_run }}
+          github-token: ${{ github.token }}
+          path: download
+      - name: Install isolated VM test tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf tesseract-ocr busybox-static
+          busybox --list | grep -x udhcpd
+          cp /usr/bin/busybox scripts/qa-busybox
+      - name: Boot and exercise the exact ISO
+        env:
+          PRAMAAN_BOOT_MODES: ${{ matrix.mode }}
+          PRAMAAN_NIC_MODEL: ${{ matrix.nic }}
+          PRAMAAN_NETWORK_QA: '1'
+          PRAMAAN_NETWORK_EXTENDED: ${{ matrix.extended }}
+        run: python3 scripts/iso-smoke.py "$(find download -name '*.iso' -print -quit)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: extended-network-${{ matrix.nic }}-${{ matrix.mode }}
+          path: iso-smoke-output/
+          if-no-files-found: ignore
