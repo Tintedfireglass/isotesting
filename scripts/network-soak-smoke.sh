@@ -8,13 +8,13 @@ source /usr/local/bin/pramaan-network.sh
 saved_dns=$(mktemp)
 cat /etc/resolv.conf > "$saved_dns"
 saved_epoch=$(date +%s)
-saved_seconds=$SECONDS
+saved_uptime=$(cut -d. -f1 /proc/uptime)
 clock_changed=0
 cleanup() {
     cat "$saved_dns" > /etc/resolv.conf
     rm -f "$saved_dns"
     if [[ "$clock_changed" == 1 ]]; then
-        date -u -s "@$((saved_epoch + SECONDS - saved_seconds))"
+        date -u -s "@$((saved_epoch + $(cut -d. -f1 /proc/uptime) - saved_uptime))"
         timedatectl set-ntp true
     fi
 }
@@ -46,14 +46,14 @@ require_online
 echo 'PASS: HTTPS recovers after restoring DNS'
 # Prove certificate validation actually rejects an invalid system date.
 saved_epoch=$(date +%s)
-saved_seconds=$SECONDS
+saved_uptime=$(cut -d. -f1 /proc/uptime)
 timedatectl set-ntp false
 clock_changed=1
 date -u -s '2020-01-01 00:00:00'
 if pramaan_network_check; then echo 'NETWORK_SOAK_FAIL: invalid-date TLS was accepted'; exit 1; fi
 [[ "$PRAMAAN_NETWORK_ERROR" == *certificate* ]]
 echo "PASS: invalid-clock certificate validation fails: $PRAMAAN_NETWORK_ERROR"
-date -u -s "@$((saved_epoch + SECONDS - saved_seconds))"
+date -u -s "@$((saved_epoch + $(cut -d. -f1 /proc/uptime) - saved_uptime))"
 timedatectl set-ntp true
 clock_changed=0
 require_online
