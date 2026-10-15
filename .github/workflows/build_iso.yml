@@ -89,7 +89,7 @@ jobs:
       run: |
         sudo chroot chroot /bin/sh -c 'command -v nmcli && command -v nmtui && command -v wpa_supplicant && command -v rfkill && command -v iw'
         sudo chroot chroot systemctl is-enabled systemd-timesyncd
-        test -f chroot/lib/firmware/regulatory.db
+        sudo chroot chroot test -f /lib/firmware/regulatory.db
         test "$(readlink chroot/etc/resolv.conf)" = /run/NetworkManager/resolv.conf
 
     # ── 7. Verify ISO integrity ───────────────────────────────────────────────

@@ -5,6 +5,8 @@ export PAGER=cat NM_CLI_PAGER=cat TERM=dumb
 exec > /dev/ttyS0 2>&1
 trap 'echo "WIFI_QA_FAIL at line $LINENO"' ERR
 echo WIFI_QA_START
+test -f /lib/firmware/regulatory.db
+echo 'PASS: wireless regulatory database resolves inside the live system'
 modprobe mac80211_hwsim radios=2
 cleanup() {
     nmcli con delete Pramaan-QA-client Pramaan-QA-ap || true
