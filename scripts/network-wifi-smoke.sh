@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run only inside the disposable QEMU guest, via a read-only test-script share.
-set -euo pipefail
+set -Eeuo pipefail
 export PAGER=cat NM_CLI_PAGER=cat TERM=dumb
 export LC_ALL=C
 exec > /dev/ttyS0 2>&1
@@ -75,7 +75,7 @@ option lease 600
 lease_file /run/qa-udhcpd.leases
 pidfile /run/qa-udhcpd.pid
 EOF
-    /mnt/qa-busybox udhcpd -f /run/qa-udhcpd.conf &
+    /mnt/qa-tools/busybox udhcpd -f /run/qa-udhcpd.conf &
     dhcp_pid=$!
     nmcli con modify Pramaan-QA-client ipv4.method auto ipv4.addresses '' ipv4.ignore-auto-dns yes
     wifi_connected() {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fault injection inside a disposable live-ISO VM only.
-set -euo pipefail
+set -Eeuo pipefail
 export PAGER=cat TERM=dumb LC_ALL=C
 exec > /dev/ttyS0 2>&1
 trap 'echo "NETWORK_SOAK_FAIL at line $LINENO"' ERR

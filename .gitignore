@@ -25,3 +25,6 @@ network-validation-evidence/
 network-wpa-evidence/
 network-final-evidence/
 network-final-pass-evidence/
+extended-network-evidence/
+expanded-usb-evidence/
+scripts/qa-tools/

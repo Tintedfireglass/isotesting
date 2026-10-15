@@ -8,6 +8,10 @@ on:
       iso_artifact:
         required: true
         description: Exact ISO artifact name
+      extended_only:
+        type: boolean
+        default: false
+        description: Run only the extended fault test; other adapter checks already passed
 jobs:
   network:
     runs-on: ubuntu-latest
@@ -18,16 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - nic: e1000
-            mode: bios
-            extended: '1'
-          - nic: virtio-net-pci
-            mode: uefi
-            extended: ''
-          - nic: rtl8139
-            mode: bios
-            extended: ''
+        include: ${{ fromJSON(inputs.extended_only && '[{"nic":"e1000","mode":"bios","extended":"1"}]' || '[{"nic":"e1000","mode":"bios","extended":"1"},{"nic":"virtio-net-pci","mode":"uefi","extended":""},{"nic":"rtl8139","mode":"bios","extended":""}]') }}
     name: ${{ matrix.nic }} / ${{ matrix.mode }}
     steps:
       - uses: actions/checkout@v4
@@ -41,8 +36,9 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf tesseract-ocr busybox-static
-          busybox --list | grep -x udhcpd
-          cp /usr/bin/busybox scripts/qa-busybox
+          mkdir -p scripts/qa-tools
+          cp /usr/bin/busybox scripts/qa-tools/busybox
+          scripts/qa-tools/busybox --list | grep -x udhcpd
       - name: Boot and exercise the exact ISO
         env:
           PRAMAAN_BOOT_MODES: ${{ matrix.mode }}
