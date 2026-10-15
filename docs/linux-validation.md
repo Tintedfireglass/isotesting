@@ -27,8 +27,12 @@ the dashboard, disables networking inside the disposable guest, then verifies
 Ethernet recovery, DHCP, DNS and verified HTTPS to the Pramaan server. It also
 loads two `mac80211_hwsim` radios and verifies discovery and a WPA2 association
 using the live image's installed NetworkManager and supplicant. The simulated
-Wi-Fi profiles use fixed addresses; real Wi-Fi DHCP, radio/driver compatibility
-and the tester's router still require a physical laptop retest. Test scripts are
+baseline Wi-Fi profiles use fixed addresses. The extended test provides a static
+BusyBox DHCP server as guest test tooling and checks Wi-Fi DHCP,
+incorrect passwords, repeated reconnects, software radio blocking and access-point
+restart. It also injects broken DNS and an invalid clock inside the guest, verifies
+HTTPS fails, restores them, and verifies recovery. Physical radio/driver
+compatibility and the tester's router still require a laptop retest. Test scripts are
 provided to the guest through a read-only share and never alter host networking.
 
 GitHub Actions builds the self-contained CLI and ISO, then boots BIOS and UEFI
@@ -48,6 +52,10 @@ See `linux-live-usb.md` for preparation and controls.
 
 - [Download `Pramaan_QC_Live_network-final_20261015.iso`](https://github.com/Tintedfireglass/isotesting/actions/runs/38770920517/artifacts/11990889622).
 - [Final ISO network validation](https://github.com/Tintedfireglass/isotesting/actions/runs/38772478961): passed in BIOS and UEFI. Covers Settings, activation cancellation blocking tests, Ethernet recovery after disabling networking, DHCP/DNS, verified HTTPS, regulatory database availability, and simulated WPA2 association.
+- [Final ISO USB recovery](https://github.com/Tintedfireglass/isotesting/actions/runs/38774807419): passed in BIOS and UEFI. Saved reports survive USB reboot and original-machine retry restrictions remain enforced.
+- [Extended Wi-Fi and network fault tests](https://github.com/Tintedfireglass/isotesting/actions/runs/38776813626): passed against the same ISO. Incorrect WPA2 password is rejected; Wi-Fi obtains DHCP leases over three reconnects and recovers after software radio blocking and an access-point restart. Ethernet recovers DHCP/DNS/HTTPS over three disable/enable cycles. Broken DNS and an invalid system date correctly fail HTTPS; restoring DNS/time restores verified HTTPS. Serial logs contain DHCP acknowledgements and both `WIFI_QA_PASS` and `NETWORK_SOAK_PASS`.
+- Additional virtual adapter checks passed: [VirtIO in UEFI](https://github.com/Tintedfireglass/isotesting/actions/runs/38774926781/job/116560005690) and [Realtek RTL8139 in BIOS](https://github.com/Tintedfireglass/isotesting/actions/runs/38774926781/job/116560005759). That matrix's initial extended Intel test failed because the test fixture renamed the BusyBox executable, preventing its DHCP applet from starting. The corrected extended test is the successful run linked above; no application change was required.
+- Local UI, activation, SMART/storage, frozen-payload retries, atomic report recovery and launcher regressions passed again. The serialized report and all 18 physical-condition/scratches combinations satisfy the dashboard's actual submission schema; omitting optional condition fields also passes.
 - CLI build and UI/report/activation/storage regressions passed. The ISO was built from source snapshot `2ddc6bd`. Its build run failed a post-build assertion because the host followed the regulatory database's absolute symlink outside the chroot. That assertion is corrected in source; the completed ISO was verified directly in the separate successful VM run linked above. No ISO rebuild is needed for this test-only correction.
 
 This image supersedes the October 13 image below. Physical Wi-Fi/Ethernet, the
