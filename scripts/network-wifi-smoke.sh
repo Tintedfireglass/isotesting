@@ -43,6 +43,7 @@ if [[ "$found" != 1 ]]; then
     iw reg get
     nmcli device status
     journalctl -u NetworkManager --no-pager -n 50
+    echo 'WIFI_QA_FAIL: test access point was not discovered within 30 seconds'
     exit 1
 fi
 nmcli con add type wifi ifname "$client" con-name Pramaan-QA-client ssid Pramaan-QA \
