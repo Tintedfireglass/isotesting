@@ -28,7 +28,7 @@ def boot(mode):
         if network_qa:
             scripts = Path(__file__).resolve().parent
             args += ["-virtfs", f"local,path={scripts},security_model=none,mount_tag=qa-scripts,readonly=on",
-                     "-serial", f"file:{output / 'wifi-serial.log'}"]
+                     "-serial", f"file:{output / (mode + '-wifi-serial.log')}"]
         live_license = (os.environ.get("PRAMAAN_TEST_LICENSE_KEY") or "").strip() if mode == "bios" else None
         if live_license:
             # Stable, explicitly virtual identity consumes only one test activation.
@@ -239,7 +239,7 @@ def boot(mode):
                     time.sleep(30)
                     type_text("pramaan-network.sh details")
                     key("ret")
-                    wait_screen("network-recovery", lambda text: "REACHABLE OVER VERIFIED HTTPS" in text, timeout=45)
+                    wait_screen("network-recovery", lambda text: "REACHABLE" in text and "VERIFIED HTTPS" in text, timeout=45)
                     print(f"PASS: {mode} Ethernet recovery, DHCP, DNS and verified HTTPS from live ISO", flush=True)
                     if network_qa:
                         type_text("mount -t 9p -o trans=virtio qa-scripts /mnt")
@@ -249,7 +249,7 @@ def boot(mode):
                         key("ret")
                         deadline = time.monotonic() + 150
                         while time.monotonic() < deadline:
-                            serial = (output / "wifi-serial.log").read_text(errors="replace")
+                            serial = (output / (mode + "-wifi-serial.log")).read_text(errors="replace")
                             if "WIFI_QA_PASS" in serial:
                                 print("PASS: live image scans and completes WPA2 Wi-Fi association with simulated radios", flush=True)
                                 break

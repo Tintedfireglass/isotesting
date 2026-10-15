@@ -26,10 +26,10 @@ jobs:
       - name: Install VM tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends qemu-system-x86 tesseract-ocr
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf tesseract-ocr
       - name: Verify network Settings, Ethernet recovery and simulated WPA2 Wi-Fi
         env:
-          PRAMAAN_BOOT_MODES: bios
+          PRAMAAN_BOOT_MODES: bios uefi
           PRAMAAN_NETWORK_QA: '1'
         run: python3 scripts/iso-smoke.py "$(find download -name '*.iso' -print -quit)"
       - name: Upload network evidence
