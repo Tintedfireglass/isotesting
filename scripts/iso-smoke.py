@@ -24,6 +24,11 @@ def boot(mode):
         args = ["qemu-system-x86_64", "-m", "2048", "-smp", "2", "-display", "none",
                 "-vga", "std",
                 "-nic", "user,model=e1000", "-qmp", f"unix:{endpoint},server=on,wait=off"]
+        network_qa = bool(os.environ.get("PRAMAAN_NETWORK_QA"))
+        if network_qa:
+            scripts = Path(__file__).resolve().parent
+            args += ["-virtfs", f"local,path={scripts},security_model=none,mount_tag=qa-scripts,readonly=on",
+                     "-serial", f"file:{output / 'wifi-serial.log'}"]
         live_license = (os.environ.get("PRAMAAN_TEST_LICENSE_KEY") or "").strip() if mode == "bios" else None
         if live_license:
             # Stable, explicitly virtual identity consumes only one test activation.
@@ -115,13 +120,21 @@ def boot(mode):
                     time.sleep(0.12)
 
                 def type_text(value):
-                    punctuation = {"-": "minus", " ": "spc", ".": "dot", ";": "semicolon"}
+                    punctuation = {"-": "minus", " ": "spc", ".": "dot", ";": "semicolon", "/": "slash", "=": "equal"}
                     for char in value:
                         key("shift-" + char.lower() if char.isupper() else punctuation.get(char, char))
 
                 dashboard = wait_dashboard("dashboard")
                 if not all(marker in dashboard for marker in ("DETAILS", "REPORTS", "MESSAGES")):
                     raise RuntimeError(f"{mode}: secondary navigation is not readable on the boot console")
+                if network_qa:
+                    for _ in range(6): key("down")
+                    key("ret")
+                    wait_screen("network-settings", lambda text: "CLOCK DETAILS" in text)
+                    key("4")
+                    key("ret")
+                    wait_dashboard("network-settings-closed")
+                    for _ in range(6): key("up")
                 if usb_image:
                     if "PERSISTEN" not in dashboard:
                         raise RuntimeError(f"{mode}: boot USB report partition not mounted")
@@ -228,6 +241,24 @@ def boot(mode):
                     key("ret")
                     wait_screen("network-recovery", lambda text: "REACHABLE OVER VERIFIED HTTPS" in text, timeout=45)
                     print(f"PASS: {mode} Ethernet recovery, DHCP, DNS and verified HTTPS from live ISO", flush=True)
+                    if network_qa:
+                        type_text("mount -t 9p -o trans=virtio qa-scripts /mnt")
+                        key("ret")
+                        time.sleep(2)
+                        type_text("bash /mnt/network-wifi-smoke.sh")
+                        key("ret")
+                        deadline = time.monotonic() + 150
+                        while time.monotonic() < deadline:
+                            serial = (output / "wifi-serial.log").read_text(errors="replace")
+                            if "WIFI_QA_PASS" in serial:
+                                print("PASS: live image scans and completes WPA2 Wi-Fi association with simulated radios", flush=True)
+                                break
+                            if "WIFI_QA_FAIL" in serial:
+                                raise RuntimeError("Simulated Wi-Fi check failed; inspect wifi-serial.log")
+                            time.sleep(2)
+                        else:
+                            capture("wifi-test-timeout")
+                            raise RuntimeError("Simulated Wi-Fi check timed out; inspect serial log and screenshot")
             finally:
                 connection.close()
                 process.terminate()
