@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Network setup for the disposable live system. No passwords are logged.
+export NM_CLI_PAGER=cat
 
 pramaan_network_prepare() {
     systemctl start NetworkManager || return 1
@@ -63,7 +64,7 @@ pramaan_network_menu() {
     pramaan_network_prepare || echo "NetworkManager failed to start; inspect network details."
     while true; do
         echo ""
-        echo "  [1] Connect / edit Wi-Fi or Ethernet"
+        echo "  [1] Connect to Wi-Fi or Ethernet"
         echo "  [2] Retry Ethernet (request an address automatically)"
         echo "  [3] Show network / HTTPS / clock details"
         echo "  [4] Return to Pramaan (tests require online activation)"

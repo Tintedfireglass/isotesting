@@ -89,6 +89,7 @@ jobs:
       run: |
         sudo chroot chroot /bin/sh -c 'command -v nmcli && command -v nmtui && command -v wpa_supplicant && command -v rfkill && command -v iw'
         sudo chroot chroot systemctl is-enabled systemd-timesyncd
+        test -f chroot/lib/firmware/regulatory.db
         test "$(readlink chroot/etc/resolv.conf)" = /run/NetworkManager/resolv.conf
 
     # ── 7. Verify ISO integrity ───────────────────────────────────────────────
@@ -120,6 +121,8 @@ jobs:
         sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf tesseract-ocr
 
     - name: Boot ISO in BIOS and UEFI VMs
+      env:
+        PRAMAAN_NETWORK_QA: '1'
       run: python3 scripts/iso-smoke.py pramaan-live.iso
 
     - name: Upload VM smoke evidence

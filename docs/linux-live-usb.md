@@ -67,9 +67,10 @@ Before distributing an ISO, boot it in a Linux VM and then a physical laptop.
 Verify both UEFI and legacy boot, 80x24 and larger consoles, window/font resizing,
 Full QC submission with an authorized test account, no-network recovery, report
 survival after app restart and reboot, and refusal to retry on another laptop.
-# Network connection and recovery
 
-The live image explicitly installs `wpasupplicant`, `rfkill`, `iw` and
+## Network connection and recovery
+
+The live image explicitly installs `wpasupplicant`, `wireless-regdb`, `rfkill`, `iw` and
 `systemd-timesyncd`. NetworkManager manages Ethernet and Wi-Fi, including adapters
 listed by live-boot/ifupdown. DHCP-provided DNS replaces build-host DNS settings.
 The launcher enables networking and the Wi-Fi radio, unblocks software radio

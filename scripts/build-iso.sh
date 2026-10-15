@@ -104,6 +104,7 @@ chroot "$CHROOT" apt-get install -y --no-install-recommends \
     wpasupplicant \
     rfkill \
     iw \
+    wireless-regdb \
     systemd-timesyncd \
     firmware-iwlwifi \
     firmware-sof-signed \
