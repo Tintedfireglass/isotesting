@@ -212,6 +212,22 @@ def boot(mode):
                 time.sleep(3)
                 wait_screen("exit", lambda text: "EXITED" in text)
                 print(f"PASS: {mode} boots the ISO, renders dashboard, switches views, and exits", flush=True)
+                if not usb_image and not live_license:
+                    # Turn networking off, then verify the shipped recovery helper
+                    # restores DHCP/DNS and reaches the real endpoint with TLS validation.
+                    key("s")
+                    key("ret")
+                    time.sleep(2)
+                    type_text("nmcli networking off")
+                    key("ret")
+                    time.sleep(2)
+                    type_text("pramaan-network.sh auto")
+                    key("ret")
+                    time.sleep(30)
+                    type_text("pramaan-network.sh details")
+                    key("ret")
+                    wait_screen("network-recovery", lambda text: "REACHABLE OVER VERIFIED HTTPS" in text, timeout=45)
+                    print(f"PASS: {mode} Ethernet recovery, DHCP, DNS and verified HTTPS from live ISO", flush=True)
             finally:
                 connection.close()
                 process.terminate()

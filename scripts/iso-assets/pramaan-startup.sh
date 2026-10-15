@@ -38,77 +38,18 @@ echo -e "  ${BOLD}QC Diagnostics Tool${RESET}  ${DIM}|  Live USB Edition${RESET}
 echo -e "  ${DIM}──────────────────────────────────────────────────────────${RESET}"
 echo ""
 
-# ── Helper: check internet connectivity ──────────────────────────────────────
-check_internet() {
-    # Try two DNS servers in parallel for speed
-    ping -c 1 -W 3 8.8.8.8 &>/dev/null || \
-    ping -c 1 -W 3 1.1.1.1 &>/dev/null
-}
-
-# ── Step 1: Network ───────────────────────────────────────────────────────────
+# Network setup is reusable from Settings and the post-run launcher.
+source /usr/local/bin/pramaan-network.sh
 echo -e "  ${BOLD}[ 1 / 2 ]${RESET}  Network connection"
-echo ""
-
-# Ensure NetworkManager is running
-if ! systemctl is-active --quiet NetworkManager 2>/dev/null; then
-    echo -e "  Starting NetworkManager..."
-    systemctl start NetworkManager
-fi
-
-# Give NM a few seconds to auto-connect ethernet via DHCP
-echo -e "  ${DIM}Checking for ethernet / auto-connect...${RESET}"
-for i in 1 2 3 4 5; do
-    sleep 1
-    if check_internet; then
-        break
-    fi
-done
-
-if check_internet; then
-    # Show which interface connected
-    IFACE=$(ip route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1)
-    echo -e "  ${GREEN}✓  Connected${RESET}${DIM} via ${IFACE:-ethernet}${RESET}"
+echo "  Preparing Wi-Fi and Ethernet..."
+pramaan_network_prepare
+pramaan_ethernet_connect
+if pramaan_network_check; then
+    echo "  Connected to Pramaan over verified HTTPS."
 else
-    echo -e "  ${YELLOW}⚠  No automatic connection detected.${RESET}"
-    echo ""
-    echo -e "  ${DIM}How would you like to connect?${RESET}"
-    echo ""
-    echo -e "    ${BOLD}[1]${RESET}  Connect to Wi-Fi  ${DIM}(opens network manager)${RESET}"
-    echo -e "    ${BOLD}[2]${RESET}  Plug in ethernet and retry"
-    echo -e "    ${BOLD}[3]${RESET}  Skip — continue without internet"
-    echo ""
-    read -r -t 60 -p "  Your choice [1/2/3] (auto-skip in 60s): " net_choice || net_choice="3"
-    echo ""
-
-    case "${net_choice}" in
-        1)
-            # nmtui provides a clean TUI for Wi-Fi
-            nmtui connect
-            sleep 3
-            if check_internet; then
-                echo -e "  ${GREEN}✓  Connected via Wi-Fi${RESET}"
-            else
-                echo -e "  ${YELLOW}⚠  Still no internet. Some features may be limited.${RESET}"
-            fi
-            ;;
-        2)
-            echo -e "  ${DIM}Retrying ethernet in 5 seconds...${RESET}"
-            sleep 5
-            if check_internet; then
-                echo -e "  ${GREEN}✓  Connected${RESET}"
-            else
-                echo -e "  ${YELLOW}⚠  No connection. Continuing without internet.${RESET}"
-            fi
-            ;;
-        *)
-            echo -e "  ${YELLOW}⚠  Skipping network. Continuing without internet.${RESET}"
-            ;;
-    esac
+    echo "  Pramaan is not reachable: $PRAMAAN_NETWORK_ERROR"
+    pramaan_network_menu
 fi
-
-echo ""
-echo -e "  ${DIM}──────────────────────────────────────────────────────────${RESET}"
-echo ""
 
 # ── Step 2: Launch Pramaan ────────────────────────────────────────────────────
 source /usr/local/bin/pramaan-report-storage.sh
@@ -130,7 +71,7 @@ while true; do
         echo -e "  ${DIM}Press ENTER to return to the launcher, or S for a debugging shell.${RESET}"
         read -r -p "  > " crash_choice
         if [ "${crash_choice,,}" = "s" ]; then
-            bash --login
+            bash --noprofile --norc
         fi
     fi
 
@@ -141,6 +82,7 @@ while true; do
     echo -e "  ${DIM}──────────────────────────────────────────────────────────${RESET}"
     echo ""
     echo -e "  ${BOLD}[ENTER]${RESET}  Start next QC run  ${DIM}(plug in the next laptop)${RESET}"
+    echo -e "  ${BOLD}[N]${RESET}      Network setup"
     echo -e "  ${BOLD}[S]${RESET}      Open a shell       ${DIM}(advanced / debugging)${RESET}"
     echo -e "  ${BOLD}[R]${RESET}      Reboot this machine"
     echo ""
@@ -148,10 +90,11 @@ while true; do
     echo ""
 
     case "${post_choice,,}" in
+        n) pramaan_network_menu ;;
         s)
             echo -e "  ${YELLOW}Opening shell. Type '${BOLD}exit${RESET}${YELLOW}' to return to Pramaan.${RESET}"
             echo ""
-            bash --login
+            bash --noprofile --norc
             clear
             ;;
         r)

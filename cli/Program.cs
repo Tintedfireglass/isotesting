@@ -231,8 +231,17 @@ class Program
                 ShowResultsTable();
                 break;
 
-            case 6: // Settings (placeholder)
-                state.StatusMessage = "Settings: Not yet implemented.";
+            case 6: // Network settings are available before activation.
+                const string networkSetup = "/usr/local/bin/pramaan-network.sh";
+                if (OperatingSystem.IsLinux() && File.Exists(networkSetup))
+                {
+                    AnsiConsole.Clear();
+                    using var setup = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("bash", networkSetup)
+                    { UseShellExecute = false });
+                    if (setup != null) await setup.WaitForExitAsync();
+                    state.StatusMessage = "Network setup closed. Start a test to verify activation online.";
+                }
+                else state.StatusMessage = "Network setup is available in the live USB edition.";
                 break;
 
             case 7: // Saved reports

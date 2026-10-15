@@ -101,6 +101,10 @@ chroot "$CHROOT" apt-get install -y --no-install-recommends \
     systemd-sysv \
     dbus \
     network-manager \
+    wpasupplicant \
+    rfkill \
+    iw \
+    systemd-timesyncd \
     firmware-iwlwifi \
     firmware-sof-signed \
     firmware-realtek \
@@ -133,6 +137,19 @@ chroot "$CHROOT" apt-get install -y --no-install-recommends \
     libstdc++6
 ok "Packages installed"
 
+# Live-boot/ifupdown must not claim adapters before NetworkManager can manage them.
+mkdir -p "$CHROOT/etc/NetworkManager/conf.d"
+cat > "$CHROOT/etc/NetworkManager/conf.d/90-pramaan-live.conf" << 'NM_EOF'
+[main]
+dns=default
+rc-manager=file
+[ifupdown]
+managed=true
+NM_EOF
+# Do not retain the build machine's nameservers in the live image.
+rm -f "$CHROOT/etc/resolv.conf"
+ln -s /run/NetworkManager/resolv.conf "$CHROOT/etc/resolv.conf"
+
 # ── Locale & hostname ─────────────────────────────────────────────────────────
 step "Configuring locale and hostname"
 chroot "$CHROOT" /bin/bash -c \
@@ -154,6 +171,7 @@ ok "pramaan installed to /usr/local/bin/pramaan"
 # ── Install startup script ─────────────────────────────────────────────────────
 step "Installing startup script"
 cp "$ASSETS_DIR/pramaan-startup.sh" "$CHROOT/usr/local/bin/pramaan-startup.sh"
+install -m 755 "$ASSETS_DIR/pramaan-network.sh" "$CHROOT/usr/local/bin/pramaan-network.sh"
 cp "$ASSETS_DIR/pramaan-report-storage.sh" "$CHROOT/usr/local/bin/pramaan-report-storage.sh"
 chmod 755 "$CHROOT/usr/local/bin/pramaan-report-storage.sh"
 chmod 755                            "$CHROOT/usr/local/bin/pramaan-startup.sh"
@@ -181,6 +199,7 @@ PROFILE_EOF
 # ── Enable / disable systemd services ─────────────────────────────────────────
 step "Configuring systemd services"
 chroot "$CHROOT" systemctl enable NetworkManager
+chroot "$CHROOT" systemctl enable systemd-timesyncd
 # Disable timers that generate network traffic and slow down boot
 chroot "$CHROOT" systemctl disable apt-daily.timer            2>/dev/null || true
 chroot "$CHROOT" systemctl disable apt-daily-upgrade.timer    2>/dev/null || true

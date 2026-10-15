@@ -89,7 +89,11 @@ public sealed class OnlineActivation
             ForcePrompt = true;
             state.DeviceId = 0;
             state.StatusMessage = "Tests blocked: online activation required.";
-            state.FooterMessage = "Tests blocked. Connect to the internet and activate a license or valid trial. " + ex.Message;
+            var errors = new List<string>();
+            for (Exception? cause = ex; cause != null; cause = cause.InnerException)
+                if (!errors.Contains(cause.Message)) errors.Add(cause.Message);
+            state.FooterMessage = "Tests blocked. Open Settings for network / HTTPS / clock checks, then activate a license or valid trial. "
+                + string.Join(" -> ", errors);
             state.SelectedView = 4;
             state.Page = 0;
             AnsiConsole.WriteLine(state.FooterMessage);

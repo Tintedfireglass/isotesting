@@ -67,3 +67,27 @@ Before distributing an ISO, boot it in a Linux VM and then a physical laptop.
 Verify both UEFI and legacy boot, 80x24 and larger consoles, window/font resizing,
 Full QC submission with an authorized test account, no-network recovery, report
 survival after app restart and reboot, and refusal to retry on another laptop.
+# Network connection and recovery
+
+The live image explicitly installs `wpasupplicant`, `rfkill`, `iw` and
+`systemd-timesyncd`. NetworkManager manages Ethernet and Wi-Fi, including adapters
+listed by live-boot/ifupdown. DHCP-provided DNS replaces build-host DNS settings.
+The launcher enables networking and the Wi-Fi radio, unblocks software radio
+blocks and requests an Ethernet connection. A hardware airplane-mode switch must
+still be enabled on the laptop.
+
+Connectivity is checked against the Pramaan server using verified HTTPS, with
+bounded DNS/connect/request timeouts. HTTP authorization responses still count as
+a reachable server; tests continue to require fresh online activation. TLS
+validation is never bypassed. Clock synchronization is enabled because an
+incorrect date can prevent certificate validation.
+
+Use **Settings** in the app or **N** after exiting to reopen network setup without
+rebooting. **Show network / HTTPS / clock details** displays adapter state, radio
+blocks, default route, DNS, UTC time and the complete curl connection error.
+Activation messages also retain nested TLS errors in the Messages view. Wi-Fi
+passwords and activation credentials are not included in network diagnostics.
+
+The setup menu stays available after a failed attempt. It no longer silently
+skips network setup after a timeout. Returning to the app offline allows viewing
+saved data; tests remain blocked until online activation succeeds.

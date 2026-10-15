@@ -39,6 +39,8 @@ jobs:
       run: |
         dotnet run --project scripts/LinuxAppChecks/LinuxAppChecks.csproj -c Release
         bash scripts/check-report-storage.sh
+        bash scripts/check-network.sh
+        bash -n scripts/iso-assets/pramaan-network.sh
         bash -n scripts/iso-assets/pramaan-startup.sh
         bash -n scripts/iso-assets/pramaan-report-storage.sh
         python3 scripts/terminal-smoke.py
@@ -82,6 +84,12 @@ jobs:
     - name: Build Live ISO
       id: iso
       run: sudo ./scripts/build-iso.sh
+
+    - name: Verify live networking dependencies
+      run: |
+        sudo chroot chroot /bin/sh -c 'command -v nmcli && command -v nmtui && command -v wpa_supplicant && command -v rfkill && command -v iw'
+        sudo chroot chroot systemctl is-enabled systemd-timesyncd
+        test "$(readlink chroot/etc/resolv.conf)" = /run/NetworkManager/resolv.conf
 
     # ── 7. Verify ISO integrity ───────────────────────────────────────────────
     - name: Verify ISO
