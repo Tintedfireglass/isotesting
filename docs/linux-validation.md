@@ -48,7 +48,20 @@ components were not verified. The temporary Actions secret was removed afterward
 Physical laptop boot and the tester's actual SSD still require a hardware retest.
 See `linux-live-usb.md` for preparation and controls.
 
-## Latest network recovery ISO
+## Final compiled release — October 17, 2026
+
+- [Download `Pramaan_QC_Live_final-tested_20261017.iso`](https://github.com/Tintedfireglass/isotesting/actions/runs/39050534971/artifacts/12107678080).
+- Source snapshot: `bb2b15e`. ISO size: 484,167,680 bytes.
+- SHA-256: `6e1a9e5c6ddabd0dd98839d954e81f59fdf2bf91549fdc38a2f602fc63d6c00e`.
+- [Compilation and baseline validation](https://github.com/Tintedfireglass/isotesting/actions/runs/39050534971): passed, including Linux UI/report/authentication/storage regressions, real terminal resizing, dependency checks, BIOS/UEFI boot, Settings, activation blocking, Ethernet DHCP/DNS/HTTPS recovery and simulated WPA2 association.
+- [Expanded network validation](https://github.com/Tintedfireglass/isotesting/actions/runs/39051377872): all three virtual Ethernet adapter jobs passed. Includes Wi-Fi DHCP reconnects, wrong-password rejection, software radio-block recovery, access-point restart, repeated Ethernet recovery, broken DNS and invalid-clock TLS rejection/recovery.
+- [USB reboot recovery](https://github.com/Tintedfireglass/isotesting/actions/runs/39051376081): passed in BIOS and UEFI. Saved reports survive reboot on the configured PRAMAAN_DATA partition; original-machine retry restrictions are enforced.
+
+These runs tested this freshly compiled ISO. It supersedes the earlier downloads
+below. Physical laptop adapter/router compatibility and the tester's SSD still
+require a hardware smoke test.
+
+## October 15 network recovery ISO
 
 - [Download `Pramaan_QC_Live_network-final_20261015.iso`](https://github.com/Tintedfireglass/isotesting/actions/runs/38770920517/artifacts/11990889622).
 - [Final ISO network validation](https://github.com/Tintedfireglass/isotesting/actions/runs/38772478961): passed in BIOS and UEFI. Covers Settings, activation cancellation blocking tests, Ethernet recovery after disabling networking, DHCP/DNS, verified HTTPS, regulatory database availability, and simulated WPA2 association.
